@@ -1,0 +1,179 @@
+.group-details-page {
+  min-height: 100vh;
+  padding: 45px 8%;
+  background: #f5f8f6;
+  color: #18352a;
+}
+
+.group-details-page button {
+  padding: 10px 16px;
+  border: 1px solid #dce5df;
+  border-radius: 8px;
+  background: white;
+  cursor: pointer;
+}
+
+.group-details-page h1 {
+  margin-top: 30px;
+  font-size: 32px;
+}
+
+.members-section {
+  margin-top: 35px;
+}
+
+.member-card {
+  background: white;
+  padding: 18px;
+  margin-top: 12px;
+  border-radius: 12px;
+  border: 1px solid #edf1ee;
+}
+
+.member-card p {
+  color: #718078;
+  margin-bottom: 0;
+}
+
+.group-details-error {
+  color: #c0392b;
+}
+
+.invite-section {
+  margin-top: 35px;
+  padding: 24px;
+  background: white;
+  border: 1px solid #edf1ee;
+  border-radius: 12px;
+}
+
+.invite-section p {
+  color: #718078;
+}
+
+.invite-section button {
+  margin-top: 12px;
+  background: #176b4d;
+  color: white;
+  border: none;
+}
+
+.invite-section button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.invite-link-container {
+  display: flex;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.invite-link-container input {
+  flex: 1;
+  min-width: 0;
+  padding: 11px;
+  border: 1px solid #dce5df;
+  border-radius: 8px;
+}
+
+
+.expense-section,
+.expense-history-section {
+  margin-top: 30px;
+  padding: 20px;
+  border: 1px solid #ddd;
+  border-radius: 10px;
+}
+
+.expense-section form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.expense-form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.expense-form-group input,
+.expense-form-group select {
+  width: 100%;
+  padding: 11px;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  font-size: 15px;
+}
+
+.expense-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+  margin-top: 15px;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+}
+
+.expense-card h3 {
+  margin: 0;
+}
+
+.expense-splits {
+  padding-top: 10px;
+  border-top: 1px solid #eee;
+}
+
+.expense-success {
+  color: green;
+}
+
+.balances-section {
+  margin-top: 30px;
+  padding: 20px;
+  border: 1px solid #ddd;
+  border-radius: 10px;
+}
+
+.balance-card {
+  padding: 15px;
+  margin-top: 12px;
+  border: 1px solid #eee;
+  border-radius: 8px;
+}
+
+.balance-positive {
+  color: #16803c;
+}
+
+.balance-negative {
+  color: #d12f2f;
+}
+
+.balance-settled {
+  color: #666;
+}
+
+.settlements-section {
+  margin-top: 30px;
+  padding: 20px;
+  border: 1px solid #ddd;
+  border-radius: 10px;
+}
+
+.settlement-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 15px;
+  padding: 15px;
+  margin-top: 12px;
+  border: 1px solid #eee;
+  border-radius: 8px;
+}
+
+.settlement-card p {
+  margin: 5px 0;
+}
