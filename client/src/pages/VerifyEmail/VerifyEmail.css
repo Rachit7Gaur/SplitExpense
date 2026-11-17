@@ -1,0 +1,133 @@
+
+.verify-page {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: #f4f8f6;
+}
+
+.verify-card {
+  width: 100%;
+  max-width: 460px;
+  padding: 40px;
+  text-align: center;
+  background: #fff;
+  border: 1px solid #e5ebe7;
+  border-radius: 16px;
+  box-shadow: 0 12px 40px rgba(16, 37, 31, 0.07);
+}
+
+.verify-icon {
+  width: 64px;
+  height: 64px;
+  display: grid;
+  place-items: center;
+  margin: 0 auto 22px;
+  border-radius: 50%;
+  background: #e8f4ef;
+  color: #108367;
+  font-size: 28px;
+}
+
+.verify-eyebrow {
+  color: #108367;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+}
+
+.verify-card h1 {
+  margin: 12px 0;
+  color: #10251f;
+  font-size: 27px;
+}
+
+.verify-description {
+  margin: 14px 0;
+  color: #718078;
+  font-size: 14px;
+  line-height: 1.7;
+}
+
+.verify-email {
+  display: block;
+  overflow-wrap: anywhere;
+  margin: 16px 0;
+  color: #263a31;
+}
+
+.verify-primary-btn,
+.verify-secondary-btn {
+  width: 100%;
+  min-height: 48px;
+  margin-top: 12px;
+  border-radius: 9px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.verify-primary-btn {
+  border: none;
+  background: #108367;
+  color: #fff;
+}
+
+.verify-primary-btn:hover:not(:disabled) {
+  background: #0c6c54;
+}
+
+.verify-secondary-btn {
+  border: 1px solid #dce5df;
+  background: #fff;
+  color: #263a31;
+}
+
+.verify-primary-btn:disabled,
+.verify-secondary-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.verify-success {
+  padding: 10px;
+  border-radius: 8px;
+  background: #e8f4ef;
+  color: #08744e;
+  font-size: 13px;
+}
+
+.verify-error {
+  padding: 10px;
+  border-radius: 8px;
+  background: #fff0ed;
+  color: #b74735;
+  font-size: 13px;
+}
+
+.verify-footer {
+  margin-top: 24px;
+  color: #718078;
+  font-size: 13px;
+}
+
+.verify-footer a {
+  color: #108367;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.verify-loading {
+  padding: 40px;
+  text-align: center;
+}
+
+@media (max-width: 480px) {
+  .verify-card {
+    padding: 28px 20px;
+  }
+
+  .verify-card h1 {
+    font-size: 23px;
+  }
+}

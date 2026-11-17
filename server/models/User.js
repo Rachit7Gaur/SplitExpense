@@ -23,6 +23,17 @@ const userSchema = new mongoose.Schema(
       trim: true,
       lowercase: true,
       maxlength: [254, 'Email cannot exceed 254 characters']
+    },
+
+    phoneNumber: {
+      type: String,
+      trim: true,
+      default: null
+    },
+
+    profileCompleted: {
+      type: Boolean,
+      default: true
     }
   },
   {
@@ -32,8 +43,17 @@ const userSchema = new mongoose.Schema(
 );
 
 userSchema.index({ firebaseUid: 1 }, { unique: true });
-
 userSchema.index({ email: 1 }, { unique: true });
+
+userSchema.index(
+  { phoneNumber: 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      phoneNumber: { $type: 'string' }
+    }
+  }
+);
 
 const User = mongoose.model('User', userSchema);
 

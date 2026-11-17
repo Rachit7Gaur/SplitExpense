@@ -1,49 +1,72 @@
 
-import { createContext, useContext, useEffect, useState } from 'react';
-import { onAuthStateChanged, signOut } from 'firebase/auth';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+} from 'react';
+
+import { onIdTokenChanged, signOut } from 'firebase/auth';
 import { auth } from '../firebase';
 
 const AuthContext = createContext(null);
+
+const API_BASE_URL = 'http://localhost:5000/api';
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [profileError, setProfileError] = useState('');
+  const [profileSynced, setProfileSynced] = useState(false);
+
+  // Prevent older async requests from overwriting newer auth state.
+  const requestId = useRef(0);
 
   useEffect(() => {
-    let isMounted = true;
-
-    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
-      if (!isMounted) return;
+    const unsubscribe = onIdTokenChanged(auth, async (currentUser) => {
+      const currentRequest = ++requestId.current;
 
       setUser(currentUser);
       setProfileError('');
+      setProfileSynced(false);
       setAuthLoading(true);
 
       try {
-        if (currentUser) {
-          const token = await currentUser.getIdToken();
+        // User is logged out.
+        if (!currentUser) {
+          return;
+        }
 
-          const response = await fetch(
-            'http://localhost:5000/api/auth/me',
-            {
-              method: 'GET',
-              headers: {
-                Authorization: `Bearer ${token}`,
-              },
-            }
+        // Do not sync incomplete or unverified profiles.
+        if (!currentUser.email || !currentUser.emailVerified) {
+          return;
+        }
+
+        const token = await currentUser.getIdToken();
+
+        const response = await fetch(`${API_BASE_URL}/auth/me`, {
+          method: 'GET',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+        });
+
+        const result = await response.json();
+
+        if (!response.ok) {
+          throw new Error(
+            result.message || 'Could not synchronize your profile.'
           );
+        }
 
-          const result = await response.json();
-
-          if (!response.ok) {
-            throw new Error(
-              result.message || 'Could not sync your profile.'
-            );
-          }
+        if (currentRequest === requestId.current) {
+          setProfileSynced(true);
         }
       } catch (error) {
-        if (isMounted) {
+        if (currentRequest === requestId.current) {
           setProfileError(
             error.message === 'Failed to fetch'
               ? 'Cannot reach the backend. Make sure the server is running.'
@@ -51,28 +74,41 @@ export function AuthProvider({ children }) {
           );
         }
       } finally {
-        if (isMounted) {
+        if (currentRequest === requestId.current) {
           setAuthLoading(false);
         }
       }
     });
 
     return () => {
-      isMounted = false;
+      requestId.current += 1;
       unsubscribe();
     };
   }, []);
 
-  async function logout() {
-    await signOut(auth);
-  }
+  const logout = useCallback(async () => {
+    setProfileError('');
+    setProfileSynced(false);
+
+    try {
+      await signOut(auth);
+    } catch (error) {
+      setProfileError(error.message || 'Could not log out.');
+      throw error;
+    }
+  }, []);
+
+  const clearProfileError = useCallback(() => {
+    setProfileError('');
+  }, []);
 
   const value = {
     user,
     authLoading,
     profileError,
+    profileSynced,
     logout,
-    clearProfileError: () => setProfileError(''),
+    clearProfileError,
   };
 
   return (

@@ -1,42 +1,44 @@
 
-import { useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 
 function GroupCard({ group }) {
-  const navigate = useNavigate();
+  const memberCount = group.members?.length || 0;
 
-  function handleOpenGroup() {
-    navigate(`/groups/${group._id}`);
-  }
+  const createdDate = group.createdAt
+    ? new Date(group.createdAt).toLocaleDateString('en-IN', {
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric',
+      })
+    : 'Date unavailable';
 
   return (
-    <article
+    <Link
+      to={`/groups/${group._id}`}
       className="group-card"
-      onClick={handleOpenGroup}
-      role="button"
-      tabIndex={0}
-      onKeyDown={(event) => {
-        if (event.key === 'Enter') {
-          handleOpenGroup();
-        }
-      }}
+      aria-label={`Open ${group.name}, ${memberCount} members`}
     >
-      <div className="group-icon">G</div>
+      <div className="group-card-top">
+        <div className="group-icon">G</div>
 
-      <h3>{group.name}</h3>
+        <span className="group-card-arrow">↗</span>
+      </div>
 
-      <p>
-        {group.members.length}{' '}
-        {group.members.length === 1 ? 'member' : 'members'}
-      </p>
+      <div className="group-card-content">
+        <h3>{group.name}</h3>
 
-      <span className="group-date">
-        Created {new Date(group.createdAt).toLocaleDateString()}
-      </span>
+        <p>
+          <span className="group-member-icon">♙</span>
+          {memberCount}{' '}
+          {memberCount === 1 ? 'member' : 'members'}
+        </p>
+      </div>
 
-      <span className="group-open-link">
-        View group →
-      </span>
-    </article>
+      <div className="group-card-footer">
+        <span>Created {createdDate}</span>
+        <span className="group-open-link">View group →</span>
+      </div>
+    </Link>
   );
 }
 

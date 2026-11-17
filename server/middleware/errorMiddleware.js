@@ -1,23 +1,20 @@
 function notFound(req, res, next) {
-  res.status(404).json({
+  return res.status(404).json({
     success: false,
     message: `Route not found: ${req.method} ${req.originalUrl}`
   });
 }
 
 function errorHandler(err, req, res, next) {
-  // Log the actual error in the backend terminal
   console.error('Backend Error:', err);
 
-  const statusCode =
-    res.statusCode >= 400 ? res.statusCode : 500;
+  if (res.headersSent) {
+    return next(err);
+  }
 
-  res.status(statusCode).json({
+  return res.status(500).json({
     success: false,
-    message:
-      statusCode === 500
-        ? 'Internal server error'
-        : err.message
+    message: 'Internal server error'
   });
 }
 

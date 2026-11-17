@@ -1,0 +1,92 @@
+
+.phone-auth {
+  width: 100%;
+  max-width: 420px;
+  margin: 70px auto;
+  padding: 32px;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.06);
+  font-family: Arial, sans-serif;
+}
+
+.phone-auth h2 {
+  margin: 0 0 24px;
+  color: #172554;
+  font-size: 24px;
+  text-align: center;
+}
+
+.phone-auth input {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  margin-bottom: 16px;
+  padding: 13px 14px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  outline: none;
+  font-size: 15px;
+}
+
+.phone-auth input:focus {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+}
+
+.phone-auth button {
+  width: 100%;
+  padding: 13px;
+  border: none;
+  border-radius: 8px;
+  background: #2563eb;
+  color: #ffffff;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.phone-auth button:hover:not(:disabled) {
+  background: #1d4ed8;
+}
+
+.phone-auth button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.phone-auth #recaptcha-container {
+  display: flex;
+  justify-content: center;
+  margin-top: 20px;
+}
+
+.phone-auth p {
+  margin-top: 14px;
+  font-size: 14px;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
+.phone-auth .success-message {
+  color: #15803d;
+  line-height: 1.5;
+}
+
+.phone-auth .error-message {
+  color: #dc2626;
+  line-height: 1.5;
+}
+
+.phone-auth h3 {
+  margin: 0 0 18px;
+  color: #172554;
+  text-align: center;
+  font-size: 19px;
+}
+
+.phone-auth p {
+  line-height: 1.5;
+}

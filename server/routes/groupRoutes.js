@@ -1,5 +1,6 @@
 const express = require('express');
 const authenticateUser = require('../middleware/authMiddleware');
+const requireVerifiedEmail = require('../middleware/requireVerifiedEmail');
 
 const {
   validateGroupInput,
@@ -19,22 +20,20 @@ const {
 
 const router = express.Router();
 
-router.get('/', authenticateUser, getMyGroups);
 
-router.post('/', authenticateUser, validateGroupInput, createGroup);
+router.use(authenticateUser, requireVerifiedEmail);
 
-router.post('/:groupId/expenses', authenticateUser, createExpense);
+router.get('/', getMyGroups);
+router.post('/', validateGroupInput, createGroup);
 
-router.get('/:groupId/expenses', authenticateUser, getGroupExpenses);
+router.post('/:groupId/expenses', createExpense);
+router.get('/:groupId/expenses', getGroupExpenses);
+router.get('/:groupId/balances', getGroupBalances);
+router.get('/:groupId/settlements', getGroupSettlements);
 
-router.get('/:groupId/balances', authenticateUser, getGroupBalances);
+router.get('/:groupId', getGroupById);
+router.post('/:groupId/invite', generateInviteLink);
+router.post('/join/:token', acceptInvite);
 
-router.get( '/:groupId/settlements', authenticateUser,getGroupSettlements);
-
-router.get('/:groupId', authenticateUser, getGroupById);
-
-router.post('/:groupId/invite', authenticateUser, generateInviteLink);
-
-router.post('/join/:token', authenticateUser, acceptInvite);
 
 module.exports = router;
