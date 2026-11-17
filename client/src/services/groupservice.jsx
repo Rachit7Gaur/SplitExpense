@@ -200,3 +200,48 @@ export async function fetchGroupSettlements(groupId) {
 
   return result.data.settlements;
 }
+
+
+export async function downloadSettlementReport(groupId) {
+  const token = await getAuthToken();
+
+  const response = await fetch(
+    `${API_URL}/${groupId}/settlement-report`,
+    {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    }
+  );
+
+  if (!response.ok) {
+    let message = 'Unable to download settlement report.';
+
+    try {
+      const result = await response.json();
+      message = result.message || message;
+    } catch {
+      // Keep the default error message if the response isn't JSON.
+    }
+
+    throw new Error(message);
+  }
+
+  const pdfBlob = await response.blob();
+
+  const objectUrl = URL.createObjectURL(pdfBlob);
+  const link = document.createElement('a');
+
+  const disposition = response.headers.get('Content-Disposition');
+  const filenameMatch = disposition?.match(/filename="([^"]+)"/);
+
+  link.href = objectUrl;
+  link.download = filenameMatch?.[1] || 'settlement-report.pdf';
+
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+
+  URL.revokeObjectURL(objectUrl);
+}

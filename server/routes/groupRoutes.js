@@ -12,6 +12,10 @@ const {
 } = require('../controllers/groupController');
 
 const {
+  downloadSettlementReport,
+} = require('../controllers/settlementReportController');
+
+const {
   createExpense,
   getGroupExpenses,
   getGroupBalances,
@@ -30,6 +34,7 @@ router.post('/:groupId/expenses', createExpense);
 router.get('/:groupId/expenses', getGroupExpenses);
 router.get('/:groupId/balances', getGroupBalances);
 router.get('/:groupId/settlements', getGroupSettlements);
+router.get('/:groupId/settlement-report',downloadSettlementReport);
 
 router.get('/:groupId', getGroupById);
 router.post('/:groupId/invite', generateInviteLink);

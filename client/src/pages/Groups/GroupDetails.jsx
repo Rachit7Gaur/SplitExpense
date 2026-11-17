@@ -10,6 +10,7 @@ import {
   fetchGroupExpenses,
   fetchGroupBalances,
   fetchGroupSettlements,
+  downloadSettlementReport,
 } from '../../services/groupservice';
 
 import './GroupDetails.css';
@@ -33,6 +34,8 @@ function GroupDetails() {
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [reportLoading, setReportLoading] = useState(false);
+  const [reportError, setReportError] = useState('');
 
   const [showExpenseForm, setShowExpenseForm] = useState(false);
   const [showInvite, setShowInvite] = useState(false);
@@ -44,7 +47,10 @@ function GroupDetails() {
 
   const [description, setDescription] = useState('');
   const [amount, setAmount] = useState('');
-  const [paidBy, setPaidBy] = useState('');
+  const [contributions, setContributions] = useState([]);
+  const [splitBetween, setSplitBetween] = useState([]);
+  const [splitType, setSplitType] = useState('equal');
+  const [customSplits, setCustomSplits] = useState({});
   const [expenseLoading, setExpenseLoading] = useState(false);
   const [expenseError, setExpenseError] = useState('');
   const [expenseMessage, setExpenseMessage] = useState('');
@@ -56,21 +62,16 @@ function GroupDetails() {
     try {
       const groupData = await fetchGroupById(groupId);
 
-      const [expenseData, balanceData, settlementData] =
-        await Promise.all([
-          fetchGroupExpenses(groupId),
-          fetchGroupBalances(groupId),
-          fetchGroupSettlements(groupId),
-        ]);
+      const [expenseData, balanceData, settlementData] = await Promise.all([
+        fetchGroupExpenses(groupId),
+        fetchGroupBalances(groupId),
+        fetchGroupSettlements(groupId),
+      ]);
 
       setGroup(groupData);
       setExpenses(expenseData);
       setBalances(balanceData);
       setSettlements(settlementData);
-
-      setPaidBy((current) =>
-        current || groupData.members?.[0]?._id || ''
-      );
     } catch (err) {
       setError(err.message || 'Unable to load group.');
     } finally {
@@ -80,7 +81,6 @@ function GroupDetails() {
 
   useEffect(() => {
     loadDashboard();
-    // Load again when the selected group changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [groupId]);
 
@@ -92,14 +92,22 @@ function GroupDetails() {
   );
 
   const payerTotals = useMemo(() => {
-    const totals = {};
+    const totals = new Map();
 
     expenses.forEach((expense) => {
-      const name = expense.paidBy?.name || 'Unknown';
-      totals[name] = (totals[name] || 0) + expense.amount;
+      const items = expense.contributions?.length
+        ? expense.contributions
+        : expense.paidBy
+          ? [{ user: expense.paidBy, amount: expense.amount }]
+          : [];
+
+      items.forEach((item) => {
+        const name = item.user?.name || 'Unknown';
+        totals.set(name, (totals.get(name) || 0) + item.amount);
+      });
     });
 
-    return Object.entries(totals)
+    return Array.from(totals.entries())
       .map(([name, total]) => ({ name, total }))
       .sort((a, b) => b.total - a.total);
   }, [expenses]);
@@ -141,29 +149,184 @@ function GroupDetails() {
     }));
   }, [dailySpending]);
 
-  const chartLine = chartPoints
-    .map((point) => `${point.x},${point.y}`)
-    .join(' ');
+  const chartLine = chartPoints.map((point) => `${point.x},${point.y}`).join(' ');
+  const chartArea = chartPoints.length ? `12,120 ${chartLine} 288,120` : '';
 
-  const chartArea = chartPoints.length
-    ? `12,120 ${chartLine} 288,120`
-    : '';
-
-  const maxPayerTotal = Math.max(
-    ...payerTotals.map((payer) => payer.total),
-    1
-  );
+  const maxPayerTotal = Math.max(...payerTotals.map((payer) => payer.total), 1);
 
   const currentMember = members.find(
-    (member) =>
-      member.email?.toLowerCase() === user?.email?.toLowerCase()
+    (member) => member.email?.toLowerCase() === user?.email?.toLowerCase()
   );
 
   const currentBalance = balances.find(
     (balance) =>
       balance.userId === currentMember?._id ||
-      balance.name === currentMember?.name
+      balance.userId?.toString() === currentMember?._id?.toString()
   );
+
+  const amountInPaise = Math.round(Number(amount) * 100);
+
+  const contributionTotal = contributions.reduce(
+    (sum, item) => sum + (Math.round(Number(item.amount) * 100) || 0),
+    0
+  );
+
+  const customSplitTotal = splitBetween.reduce(
+    (sum, memberId) =>
+      sum + (Math.round(Number(customSplits[memberId]) * 100) || 0),
+    0
+  );
+
+  function openExpenseModal() {
+    setDescription('');
+    setAmount('');
+    setContributions([]);
+    setSplitBetween([]);
+    setCustomSplits({});
+    setSplitType('equal');
+    setExpenseError('');
+    setShowExpenseForm(true);
+  }
+
+  function closeExpenseModal() {
+    if (expenseLoading) return;
+    setShowExpenseForm(false);
+  }
+
+  function toggleContributor(memberId) {
+    setContributions((current) => {
+      const exists = current.some((item) => item.userId === memberId);
+
+      if (exists) {
+        return current.filter((item) => item.userId !== memberId);
+      }
+
+      return [...current, { userId: memberId, amount: '' }];
+    });
+  }
+
+  function updateContribution(memberId, value) {
+    setContributions((current) =>
+      current.map((item) =>
+        item.userId === memberId ? { ...item, amount: value } : item
+      )
+    );
+  }
+
+  function toggleSplitMember(memberId) {
+    setSplitBetween((current) => {
+      if (current.includes(memberId)) {
+        setCustomSplits((previous) => {
+          const updated = { ...previous };
+          delete updated[memberId];
+          return updated;
+        });
+
+        return current.filter((id) => id !== memberId);
+      }
+
+      return [...current, memberId];
+    });
+  }
+
+  function updateCustomSplit(memberId, value) {
+    setCustomSplits((current) => ({
+      ...current,
+      [memberId]: value,
+    }));
+  }
+
+  async function handleAddExpense(event) {
+    event.preventDefault();
+    setExpenseError('');
+    setExpenseMessage('');
+
+    if (!description.trim()) {
+      setExpenseError('Please enter an expense description.');
+      return;
+    }
+
+    if (!Number.isFinite(Number(amount)) || amountInPaise <= 0) {
+      setExpenseError('Enter a valid expense amount.');
+      return;
+    }
+
+    if (!contributions.length) {
+      setExpenseError('Select at least one contributor.');
+      return;
+    }
+
+    if (contributions.some((item) => !item.amount || Number(item.amount) <= 0)) {
+      setExpenseError('Enter an amount for every contributor.');
+      return;
+    }
+
+    if (contributionTotal !== amountInPaise) {
+      setExpenseError('Contributor amounts must equal the expense amount.');
+      return;
+    }
+
+    if (!splitBetween.length) {
+      setExpenseError('Select at least one member for the split.');
+      return;
+    }
+
+    if (splitType === 'custom') {
+      if (splitBetween.some((id) => !customSplits[id] || Number(customSplits[id]) <= 0)) {
+        setExpenseError('Enter a custom share for every selected member.');
+        return;
+      }
+
+      if (customSplitTotal !== amountInPaise) {
+        setExpenseError('Custom shares must equal the expense amount.');
+        return;
+      }
+    }
+
+    try {
+      setExpenseLoading(true);
+
+      await createExpense(groupId, {
+        description: description.trim(),
+        amount: Number(amount),
+
+        contributions: contributions.map((item) => ({
+          userId: item.userId,
+          amount: Number(item.amount),
+        })),
+
+        splitBetween,
+
+        splitType,
+
+        customSplits:
+          splitType === 'custom'
+            ? splitBetween.map((userId) => ({
+                userId,
+                amount: Number(customSplits[userId]),
+              }))
+            : [],
+      });
+
+      const [updatedExpenses, updatedBalances, updatedSettlements] =
+        await Promise.all([
+          fetchGroupExpenses(groupId),
+          fetchGroupBalances(groupId),
+          fetchGroupSettlements(groupId),
+        ]);
+
+      setExpenses(updatedExpenses);
+      setBalances(updatedBalances);
+      setSettlements(updatedSettlements);
+
+      setShowExpenseForm(false);
+      setExpenseMessage('Expense added successfully.');
+    } catch (err) {
+      setExpenseError(err.message || 'Unable to add expense.');
+    } finally {
+      setExpenseLoading(false);
+    }
+  }
 
   async function handleGenerateInvite() {
     try {
@@ -190,58 +353,30 @@ function GroupDetails() {
     }
   }
 
-  async function handleAddExpense(event) {
-    event.preventDefault();
-
-    setExpenseError('');
-    setExpenseMessage('');
-
-    if (!description.trim()) {
-      setExpenseError('Please enter an expense description.');
-      return;
-    }
-
-    if (!amount || Number(amount) <= 0) {
-      setExpenseError('Please enter a valid amount.');
-      return;
-    }
-
-    if (!paidBy) {
-      setExpenseError('Please select who paid.');
-      return;
-    }
-
+  async function handleDownloadReport() {
     try {
-      setExpenseLoading(true);
-
-      await createExpense(groupId, {
-        description: description.trim(),
-        amount: Number(amount),
-        paidBy,
-        splitBetween: members.map((member) => member._id),
-      });
-
-      const [updatedExpenses, updatedBalances, updatedSettlements] =
-        await Promise.all([
-          fetchGroupExpenses(groupId),
-          fetchGroupBalances(groupId),
-          fetchGroupSettlements(groupId),
-        ]);
-
-      setExpenses(updatedExpenses);
-      setBalances(updatedBalances);
-      setSettlements(updatedSettlements);
-
-      setDescription('');
-      setAmount('');
-      setExpenseMessage('Expense added successfully!');
-      setShowExpenseForm(false);
+      setReportLoading(true);
+      setReportError('');
+      await downloadSettlementReport(groupId);
     } catch (err) {
-      setExpenseError(err.message);
+      setReportError(err.message || 'Unable to download settlement report.');
     } finally {
-      setExpenseLoading(false);
+      setReportLoading(false);
     }
   }
+
+  useEffect(() => {
+    if (!showExpenseForm) return undefined;
+
+    function handleEscape(event) {
+      if (event.key === 'Escape' && !expenseLoading) {
+        setShowExpenseForm(false);
+      }
+    }
+
+    document.addEventListener('keydown', handleEscape);
+    return () => document.removeEventListener('keydown', handleEscape);
+  }, [showExpenseForm, expenseLoading]);
 
   if (loading) {
     return (
@@ -260,9 +395,7 @@ function GroupDetails() {
         <div className="dashboard-state dashboard-error">
           <h2>Unable to load group</h2>
           <p>{error || 'This group could not be found.'}</p>
-          <button onClick={() => navigate('/groups')}>
-            Back to groups
-          </button>
+          <button onClick={() => navigate('/groups')}>Back to groups</button>
         </div>
       </main>
     );
@@ -270,8 +403,6 @@ function GroupDetails() {
 
   return (
     <main className="group-dashboard-page">
-
-      {/* Group overview */}
       <section className="group-dashboard-hero">
         <div>
           <p className="dashboard-eyebrow">GROUP</p>
@@ -292,25 +423,29 @@ function GroupDetails() {
         <div className="hero-actions">
           <button
             className="dashboard-secondary-button"
+            onClick={handleDownloadReport}
+            disabled={reportLoading}
+          >
+            {reportLoading ? 'Generating PDF...' : '↓ Download report'}
+          </button>
+
+          <button
+            className="dashboard-secondary-button"
             onClick={() => navigate('/groups')}
           >
             Back to groups
           </button>
 
-          <button
-            className="dashboard-primary-button"
-            onClick={() => {
-              setShowExpenseForm((value) => !value);
-              setExpenseError('');
-              setExpenseMessage('');
-            }}
-          >
+          <button className="dashboard-primary-button" onClick={openExpenseModal}>
             + Add expense
           </button>
         </div>
       </section>
 
-      {/* Financial summary */}
+      {reportError && (
+        <p className="dashboard-error-text" role="alert">{reportError}</p>
+      )}
+
       <section className="financial-summary">
         <article className="summary-card">
           <span>Total spent</span>
@@ -319,23 +454,13 @@ function GroupDetails() {
 
         <article className="summary-card">
           <span>Your share</span>
-          <strong>
-            {currentBalance
-              ? formatCurrency(currentBalance.totalShare)
-              : '—'}
-          </strong>
+          <strong>{currentBalance ? formatCurrency(currentBalance.totalShare) : '—'}</strong>
         </article>
 
         <article className="summary-card">
-          <span>
-            {currentBalance?.netBalance < 0
-              ? 'You owe'
-              : 'You are owed'}
-          </span>
+          <span>{currentBalance?.netBalance < 0 ? 'You owe' : 'You are owed'}</span>
           <strong className={
-            currentBalance?.netBalance < 0
-              ? 'summary-negative'
-              : 'summary-positive'
+            currentBalance?.netBalance < 0 ? 'summary-negative' : 'summary-positive'
           }>
             {currentBalance
               ? formatCurrency(Math.abs(currentBalance.netBalance))
@@ -344,92 +469,11 @@ function GroupDetails() {
         </article>
       </section>
 
-      {/* Add expense form */}
-      {showExpenseForm && (
-        <section className="dashboard-panel dashboard-expense-form">
-          <div className="panel-heading">
-            <div>
-              <h2>Add an expense</h2>
-              <p>Record a shared expense for this group.</p>
-            </div>
-            <button
-              className="panel-close-button"
-              onClick={() => setShowExpenseForm(false)}
-              aria-label="Close expense form"
-            >
-              ×
-            </button>
-          </div>
-
-          <form onSubmit={handleAddExpense}>
-            <div className="dashboard-form-grid">
-              <label>
-                Description
-                <input
-                  type="text"
-                  placeholder="e.g. Hotel booking"
-                  value={description}
-                  onChange={(event) => setDescription(event.target.value)}
-                  maxLength={150}
-                  required
-                />
-              </label>
-
-              <label>
-                Amount (₹)
-                <input
-                  type="number"
-                  placeholder="0.00"
-                  value={amount}
-                  onChange={(event) => setAmount(event.target.value)}
-                  min="0.01"
-                  step="0.01"
-                  required
-                />
-              </label>
-
-              <label>
-                Paid by
-                <select
-                  value={paidBy}
-                  onChange={(event) => setPaidBy(event.target.value)}
-                  required
-                >
-                  {members.map((member) => (
-                    <option key={member._id} value={member._id}>
-                      {member.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
-
-            <p className="expense-split-hint">
-              This expense will be split equally among all {members.length} members.
-            </p>
-
-            {expenseError && <p className="dashboard-error-text">{expenseError}</p>}
-
-            <button
-              className="dashboard-primary-button"
-              type="submit"
-              disabled={expenseLoading}
-            >
-              {expenseLoading ? 'Adding...' : 'Save expense'}
-            </button>
-          </form>
-        </section>
-      )}
-
       {expenseMessage && (
-        <p className="dashboard-success-text" role="status">
-          {expenseMessage}
-        </p>
+        <p className="dashboard-success-text" role="status">{expenseMessage}</p>
       )}
 
-      {/* Charts */}
       <section className="dashboard-chart-grid">
-
         <article className="dashboard-panel spending-chart-panel">
           <div className="panel-heading">
             <div>
@@ -439,21 +483,12 @@ function GroupDetails() {
           </div>
 
           {expenses.length === 0 ? (
-            <div className="chart-empty">
-              Add expenses to see your spending trend.
-            </div>
+            <div className="chart-empty">Add expenses to see your spending trend.</div>
           ) : (
             <div className="spending-chart">
               <svg viewBox="0 0 300 145" role="img" aria-label="Daily spending over the last seven days">
                 {[35, 75, 115].map((y) => (
-                  <line
-                    key={y}
-                    x1="10"
-                    y1={y}
-                    x2="290"
-                    y2={y}
-                    className="chart-grid-line"
-                  />
+                  <line key={y} x1="10" y1={y} x2="290" y2={y} className="chart-grid-line" />
                 ))}
 
                 <polygon points={chartArea} className="chart-area" />
@@ -461,18 +496,8 @@ function GroupDetails() {
 
                 {chartPoints.map((point, index) => (
                   <g key={index}>
-                    <circle
-                      cx={point.x}
-                      cy={point.y}
-                      r="3.5"
-                      className="chart-point"
-                    />
-                    <text
-                      x={point.x}
-                      y="138"
-                      textAnchor="middle"
-                      className="chart-label"
-                    >
+                    <circle cx={point.x} cy={point.y} r="3.5" className="chart-point" />
+                    <text x={point.x} y="138" textAnchor="middle" className="chart-label">
                       {point.label}
                     </text>
                   </g>
@@ -485,7 +510,7 @@ function GroupDetails() {
         <article className="dashboard-panel contribution-panel">
           <div className="panel-heading">
             <div>
-              <h2>Who paid</h2>
+              <h2>Who contributed</h2>
               <p>Contribution by group members</p>
             </div>
           </div>
@@ -503,9 +528,7 @@ function GroupDetails() {
                   <div className="payer-bar-track">
                     <div
                       className={`payer-bar payer-color-${index % 5}`}
-                      style={{
-                        width: `${(payer.total / maxPayerTotal) * 100}%`,
-                      }}
+                      style={{ width: `${(payer.total / maxPayerTotal) * 100}%` }}
                     />
                   </div>
                 </div>
@@ -515,9 +538,7 @@ function GroupDetails() {
         </article>
       </section>
 
-      {/* Expense history and members */}
       <section className="dashboard-lower-grid">
-
         <article className="dashboard-panel expenses-panel">
           <div className="panel-heading">
             <div>
@@ -534,28 +555,37 @@ function GroupDetails() {
             </div>
           ) : (
             <div className="dashboard-expense-list">
-              {expenses.map((expense, index) => (
-                <article className="dashboard-expense-item" key={expense._id}>
-                  <div className={`expense-avatar expense-avatar-${index % 5}`}>
-                    {getInitial(expense.description)}
-                  </div>
+              {expenses.map((expense, index) => {
+                const contributors = expense.contributions?.length
+                  ? expense.contributions
+                  : expense.paidBy
+                    ? [{ user: expense.paidBy, amount: expense.amount }]
+                    : [];
 
-                  <div className="dashboard-expense-info">
-                    <strong>{expense.description}</strong>
-                    <span>
-                      {expense.paidBy?.name || 'Unknown'} paid ·{' '}
-                      {new Date(expense.createdAt).toLocaleDateString('en-IN', {
-                        day: 'numeric',
-                        month: 'short',
-                      })}
-                    </span>
-                  </div>
+                return (
+                  <article className="dashboard-expense-item" key={expense._id}>
+                    <div className={`expense-avatar expense-avatar-${index % 5}`}>
+                      {getInitial(expense.description)}
+                    </div>
 
-                  <strong className="dashboard-expense-amount">
-                    {formatCurrency(expense.amount)}
-                  </strong>
-                </article>
-              ))}
+                    <div className="dashboard-expense-info">
+                      <strong>{expense.description}</strong>
+                      <span>
+                        {contributors.map((item) => item.user?.name || 'Unknown').join(', ')}
+                        {' contributed · '}
+                        {new Date(expense.createdAt).toLocaleDateString('en-IN', {
+                          day: 'numeric',
+                          month: 'short',
+                        })}
+                      </span>
+                    </div>
+
+                    <strong className="dashboard-expense-amount">
+                      {formatCurrency(expense.amount)}
+                    </strong>
+                  </article>
+                );
+              })}
             </div>
           )}
         </article>
@@ -613,20 +643,17 @@ function GroupDetails() {
                 </div>
               )}
 
-              {inviteError && (
-                <p className="dashboard-error-text">{inviteError}</p>
-              )}
+              {inviteError && <p className="dashboard-error-text">{inviteError}</p>}
             </div>
           )}
         </article>
       </section>
 
-      {/* Balances */}
       <section className="dashboard-panel balances-panel">
         <div className="panel-heading">
           <div>
             <h2>Group balances</h2>
-            <p>What each member has paid and their share.</p>
+            <p>What each member has contributed and their share.</p>
           </div>
         </div>
 
@@ -660,7 +687,6 @@ function GroupDetails() {
         </div>
       </section>
 
-      {/* Settlement suggestions */}
       <section className="dashboard-panel settlements-panel">
         <div className="panel-heading">
           <div>
@@ -693,6 +719,240 @@ function GroupDetails() {
         )}
       </section>
 
+      {showExpenseForm && (
+        <div
+          className="expense-modal-backdrop"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) closeExpenseModal();
+          }}
+        >
+          <section
+            className="expense-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="expense-modal-title"
+          >
+            <div className="expense-modal-header">
+              <div>
+                <p className="dashboard-eyebrow">NEW TRANSACTION</p>
+                <h2 id="expense-modal-title">Add an expense</h2>
+                <p>Record who contributed and who shares the cost.</p>
+              </div>
+              <button
+                type="button"
+                className="panel-close-button"
+                onClick={closeExpenseModal}
+                disabled={expenseLoading}
+                aria-label="Close expense form"
+              >
+                ×
+              </button>
+            </div>
+
+            <form onSubmit={handleAddExpense}>
+              <label className="expense-modal-field">
+                Description
+                <input
+                  type="text"
+                  placeholder="e.g. Hotel booking"
+                  value={description}
+                  onChange={(event) => setDescription(event.target.value)}
+                  maxLength={150}
+                  required
+                />
+              </label>
+
+              <label className="expense-modal-field">
+                Total expense amount (₹)
+                <input
+                  type="number"
+                  min="0.01"
+                  step="0.01"
+                  placeholder="3000.00"
+                  value={amount}
+                  onChange={(event) => setAmount(event.target.value)}
+                  required
+                />
+              </label>
+
+              <div className="expense-modal-section">
+                <div className="expense-modal-section-heading">
+                  <h3>Who contributed?</h3>
+                  <span>{contributions.length} selected</span>
+                </div>
+                <p>Select contributors and enter how much each person paid.</p>
+
+                <div className="expense-member-options">
+                  {members.map((member) => {
+                    const selected = contributions.some(
+                      (item) => item.userId === member._id
+                    );
+
+                    const item = contributions.find(
+                      (entry) => entry.userId === member._id
+                    );
+
+                    return (
+                      <div className="expense-allocation-row" key={member._id}>
+                        <label className="expense-member-checkbox">
+                          <input
+                            type="checkbox"
+                            checked={selected}
+                            onChange={() => toggleContributor(member._id)}
+                          />
+                          <span>{member.name}</span>
+                        </label>
+
+                        {selected && (
+                          <input
+                            className="allocation-amount-input"
+                            type="number"
+                            min="0.01"
+                            step="0.01"
+                            placeholder="₹ amount"
+                            aria-label={`${member.name} contribution in rupees`}
+                            value={item?.amount ?? ''}
+                            onChange={(event) =>
+                              updateContribution(member._id, event.target.value)
+                            }
+                          />
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div className="expense-allocation-total">
+                  <span>Contributed</span>
+                  <strong>{formatCurrency(contributionTotal)}</strong>
+                  <span>of {formatCurrency(amountInPaise)}</span>
+                </div>
+              </div>
+
+              <div className="expense-modal-section">
+                <div className="expense-modal-section-heading">
+                  <h3>Who shares this expense?</h3>
+                  <span>{splitBetween.length} selected</span>
+                </div>
+                <p>These members owe the expense. They do not have to be the contributors.</p>
+
+                <div className="expense-split-members">
+                  {members.map((member) => (
+                    <label className="expense-member-checkbox" key={member._id}>
+                      <input
+                        type="checkbox"
+                        checked={splitBetween.includes(member._id)}
+                        onChange={() => toggleSplitMember(member._id)}
+                      />
+                      <span>{member.name}</span>
+                    </label>
+                  ))}
+                </div>
+
+                <div className="expense-split-type">
+                  <label>
+                    <input
+                      type="radio"
+                      name="splitType"
+                      value="equal"
+                      checked={splitType === 'equal'}
+                      onChange={() => setSplitType('equal')}
+                    />
+                    Equal split
+                  </label>
+
+                  <label>
+                    <input
+                      type="radio"
+                      name="splitType"
+                      value="custom"
+                      checked={splitType === 'custom'}
+                      onChange={() => setSplitType('custom')}
+                    />
+                    Custom amounts
+                  </label>
+                </div>
+
+                {splitType === 'equal' && splitBetween.length > 0 && amountInPaise > 0 && (
+                  <div className="expense-equal-preview">
+                    {splitBetween.map((memberId) => {
+                      const member = members.find((entry) => entry._id === memberId);
+                      const share = Math.floor(amountInPaise / splitBetween.length);
+
+                      return (
+                        <div key={memberId}>
+                          <span>{member?.name}</span>
+                          <strong>
+                            {formatCurrency(
+                              share
+                            )}
+                          </strong>
+                        </div>
+                      );
+                    })}
+                    <small>
+                      Any remaining paise are distributed automatically when saved.
+                    </small>
+                  </div>
+                )}
+
+                {splitType === 'custom' && (
+                  <div className="expense-custom-splits">
+                    {splitBetween.map((memberId) => {
+                      const member = members.find((entry) => entry._id === memberId);
+
+                      return (
+                        <label key={memberId}>
+                          <span>{member?.name}</span>
+                          <input
+                            type="number"
+                            min="0.01"
+                            step="0.01"
+                            placeholder="Share in ₹"
+                            value={customSplits[memberId] || ''}
+                            onChange={(event) =>
+                              updateCustomSplit(memberId, event.target.value)
+                            }
+                          />
+                        </label>
+                      );
+                    })}
+
+                    <div className="expense-allocation-total">
+                      <span>Custom shares</span>
+                      <strong>{formatCurrency(customSplitTotal)}</strong>
+                      <span>of {formatCurrency(amountInPaise)}</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {expenseError && (
+                <p className="dashboard-error-text" role="alert">{expenseError}</p>
+              )}
+
+              <div className="expense-modal-actions">
+                <button
+                  type="button"
+                  className="dashboard-secondary-button"
+                  onClick={closeExpenseModal}
+                  disabled={expenseLoading}
+                >
+                  Cancel
+                </button>
+
+                <button
+                  type="submit"
+                  className="dashboard-primary-button"
+                  disabled={expenseLoading}
+                >
+                  {expenseLoading ? 'Saving...' : 'Save expense'}
+                </button>
+              </div>
+            </form>
+          </section>
+        </div>
+      )}
     </main>
   );
 }

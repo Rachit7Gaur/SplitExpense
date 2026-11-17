@@ -1,23 +1,22 @@
 
 const mongoose = require('mongoose');
 
-const splitSchema = new mongoose.Schema(
+const allocationSchema = new mongoose.Schema(
   {
     user: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
-      required: true
+      required: true,
     },
-
     amount: {
       type: Number,
       required: true,
       min: 1,
       validate: {
         validator: Number.isSafeInteger,
-        message: 'Split amount must be a safe integer in paise'
-      }
-    }
+        message: 'Allocation must be a safe integer in paise.',
+      },
+    },
   },
   { _id: false }
 );
@@ -28,7 +27,7 @@ const expenseSchema = new mongoose.Schema(
       type: String,
       required: [true, 'Expense description is required'],
       trim: true,
-      maxlength: [150, 'Description cannot exceed 150 characters']
+      maxlength: [150, 'Description cannot exceed 150 characters'],
     },
 
     amount: {
@@ -37,54 +36,69 @@ const expenseSchema = new mongoose.Schema(
       min: [1, 'Amount must be at least 1 paisa'],
       validate: {
         validator: Number.isSafeInteger,
-        message: 'Amount must be a safe integer in paise'
-      }
+        message: 'Amount must be a safe integer in paise.',
+      },
     },
 
+    // New format: one or more people can contribute.
+    contributions: {
+      type: [allocationSchema],
+      default: [],
+      validate: {
+        validator: function (items) {
+          if (!items || items.length === 0) {
+            return Boolean(this.paidBy);
+          }
+
+          const ids = items.map((item) => item.user.toString());
+          const uniqueIds = new Set(ids);
+          const total = items.reduce((sum, item) => sum + item.amount, 0);
+
+          return uniqueIds.size === ids.length && total === this.amount;
+        },
+        message: 'Contributions must have unique users and equal the expense amount.',
+      },
+    },
+
+    // Legacy field. Retained for expenses created before this update.
     paidBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
-      required: [true, 'Payer is required']
+      required: false,
     },
 
     groupId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Group',
-      required: [true, 'Group is required']
+      required: true,
     },
 
     splits: {
-      type: [splitSchema],
+      type: [allocationSchema],
       required: true,
       validate: {
-        validator: function (splits) {
-          if (!splits || splits.length === 0) {
-            return false;
-          }
+        validator: function (items) {
+          if (!items || items.length === 0) return false;
 
-          const userIds = splits.map(
-            (split) => split.user.toString()
-          );
+          const ids = items.map((item) => item.user.toString());
+          const uniqueIds = new Set(ids);
+          const total = items.reduce((sum, item) => sum + item.amount, 0);
 
-          const uniqueUsers = new Set(userIds);
-
-          const totalSplit = splits.reduce(
-            (total, split) => total + split.amount,
-            0
-          );
-
-          return (
-            uniqueUsers.size === userIds.length &&
-            totalSplit === this.amount
-          );
+          return uniqueIds.size === ids.length && total === this.amount;
         },
-        message: 'Splits must contain unique users and equal the expense amount.'
-      }
-    }
+        message: 'Splits must have unique users and equal the expense amount.',
+      },
+    },
+
+    splitType: {
+      type: String,
+      enum: ['equal', 'custom'],
+      default: 'equal',
+    },
   },
   {
     timestamps: true,
-    versionKey: false
+    versionKey: false,
   }
 );
 
