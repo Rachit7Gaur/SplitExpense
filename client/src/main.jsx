@@ -1,7 +1,6 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
-import './getToken.js';
 import App from './App';
 import { AuthProvider } from './context/AuthContext';
 import './index.css';
