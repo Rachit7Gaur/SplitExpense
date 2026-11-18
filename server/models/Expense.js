@@ -1,4 +1,3 @@
-
 const mongoose = require('mongoose');
 
 const allocationSchema = new mongoose.Schema(
@@ -40,7 +39,6 @@ const expenseSchema = new mongoose.Schema(
       },
     },
 
-    // New format: one or more people can contribute.
     contributions: {
       type: [allocationSchema],
       default: [],
@@ -56,15 +54,24 @@ const expenseSchema = new mongoose.Schema(
 
           return uniqueIds.size === ids.length && total === this.amount;
         },
-        message: 'Contributions must have unique users and equal the expense amount.',
+        message:
+          'Contributions must have unique users and equal the expense amount.',
       },
     },
 
-    // Legacy field. Retained for expenses created before this update.
+    // Retained for legacy expenses.
     paidBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
       required: false,
+    },
+
+    // User who originally created this expense.
+    // Optional to support expenses created before this field existed.
+    createdBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null,
     },
 
     groupId: {

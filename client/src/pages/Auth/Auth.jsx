@@ -7,6 +7,7 @@ import {
   GoogleAuthProvider,
   signInWithPopup,
   sendEmailVerification,
+  sendPasswordResetEmail,
   RecaptchaVerifier,
   signInWithPhoneNumber,
   EmailAuthProvider,
@@ -34,17 +35,20 @@ function Auth() {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
 
   const [phone, setPhone] = useState('');
   const [otp, setOtp] = useState('');
   const [phoneName, setPhoneName] = useState('');
   const [phoneEmail, setPhoneEmail] = useState('');
   const [phonePassword, setPhonePassword] = useState('');
+  const [showPhonePassword, setShowPhonePassword] = useState(false);
   const [phoneStep, setPhoneStep] = useState('phone');
 
   const [confirmation, setConfirmation] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [resetMessage, setResetMessage] = useState('');
 
   const recaptchaRef = useRef(null);
   const phoneFlowActiveRef = useRef(false);
@@ -79,6 +83,7 @@ function Auth() {
 
   function changeAuthMethod(method) {
     setError('');
+    setResetMessage('');
     setAuthMethod(method);
 
     if (method === 'email') {
@@ -127,6 +132,32 @@ function Auth() {
         await credential.user.getIdToken(true);
         navigate(redirectTo, { replace: true });
       }
+    } catch (err) {
+      setError(getAuthErrorMessage(err));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handlePasswordReset() {
+    setError('');
+    setResetMessage('');
+
+    const normalizedEmail = email.trim();
+
+    if (!normalizedEmail) {
+      setError('Password reset ke liye pehle email address enter karo.');
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      await sendPasswordResetEmail(auth, normalizedEmail);
+
+      setResetMessage(
+        'If an account exists with this email, a password reset link has been sent. Check your inbox and spam folder.'
+      );
     } catch (err) {
       setError(getAuthErrorMessage(err));
     } finally {
@@ -408,6 +439,7 @@ function Auth() {
               onClick={() => {
                 setMode('signup');
                 setError('');
+                setResetMessage('');
               }}
             >
               Sign up
@@ -419,6 +451,7 @@ function Auth() {
               onClick={() => {
                 setMode('login');
                 setError('');
+                setResetMessage('');
               }}
             >
               Log in
@@ -446,6 +479,12 @@ function Auth() {
           </p>
 
           {error && <div className="auth-error">{error}</div>}
+
+          {resetMessage && (
+            <div className="auth-success" role="status">
+              {resetMessage}
+            </div>
+          )}
 
           {authMethod === 'email' ? (
             <>
@@ -479,16 +518,41 @@ function Auth() {
 
                 <div className="auth-field">
                   <label htmlFor="password">Password</label>
-                  <input
-                    id="password"
-                    type="password"
-                    placeholder="At least 6 characters"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    minLength={6}
-                    required
-                  />
+
+                  <div className="auth-password-input">
+                    <input
+                      id="password"
+                      type={showPassword ? 'text' : 'password'}
+                      placeholder="At least 6 characters"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      minLength={6}
+                      autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
+                      required
+                    />
+
+                    <button
+                      type="button"
+                      className="auth-password-toggle"
+                      onClick={() => setShowPassword((previous) => !previous)}
+                      aria-label={showPassword ? 'Hide password' : 'Show password'}
+                    >
+                      {showPassword ? 'Hide' : 'Show'}
+                    </button>
+                  </div>
                 </div>
+
+                {mode === 'login' && (
+                    <div className="auth-forgot-password">
+                      <button
+                        type="button"
+                        onClick={handlePasswordReset}
+                        disabled={loading}
+                      >
+                        Forgot password?
+                      </button>
+                    </div>
+                  )}
 
                 <button
                   type="submit"
@@ -619,15 +683,28 @@ function Auth() {
 
                   <div className="auth-field">
                     <label htmlFor="phonePassword">Create password</label>
-                    <input
-                      id="phonePassword"
-                      type="password"
-                      placeholder="At least 6 characters"
-                      value={phonePassword}
-                      onChange={(e) => setPhonePassword(e.target.value)}
-                      minLength={6}
-                      required
-                    />
+
+                    <div className="auth-password-input">
+                      <input
+                        id="phonePassword"
+                        type={showPhonePassword ? 'text' : 'password'}
+                        placeholder="At least 6 characters"
+                        value={phonePassword}
+                        onChange={(e) => setPhonePassword(e.target.value)}
+                        minLength={6}
+                        autoComplete="new-password"
+                        required
+                      />
+
+                      <button
+                        type="button"
+                        className="auth-password-toggle"
+                        onClick={() => setShowPhonePassword((previous) => !previous)}
+                        aria-label={showPhonePassword ? 'Hide password' : 'Show password'}
+                      >
+                        {showPhonePassword ? 'Hide' : 'Show'}
+                      </button>
+                    </div>
                   </div>
 
                   <button
@@ -659,6 +736,7 @@ function Auth() {
               onClick={() => {
                 setMode(mode === 'signup' ? 'login' : 'signup');
                 setError('');
+                setResetMessage('');
               }}
             >
               {mode === 'signup' ? 'Log in' : 'Sign up'}

@@ -1,3 +1,4 @@
+
 import { auth } from '../firebase';
 
 const API_URL = 'http://localhost:5000/api/groups';
@@ -20,8 +21,8 @@ export async function fetchGroups() {
   const response = await fetch(API_URL, {
     method: 'GET',
     headers: {
-      Authorization: `Bearer ${token}`
-    }
+      Authorization: `Bearer ${token}`,
+    },
   });
 
   const result = await response.json();
@@ -41,11 +42,11 @@ export async function createGroup(groupName) {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`
+      Authorization: `Bearer ${token}`,
     },
     body: JSON.stringify({
-      name: groupName
-    })
+      name: groupName,
+    }),
   });
 
   const result = await response.json();
@@ -64,8 +65,8 @@ export async function fetchGroupById(groupId) {
   const response = await fetch(`${API_URL}/${groupId}`, {
     method: 'GET',
     headers: {
-      Authorization: `Bearer ${token}`
-    }
+      Authorization: `Bearer ${token}`,
+    },
   });
 
   const result = await response.json();
@@ -79,14 +80,15 @@ export async function fetchGroupById(groupId) {
   return result.data.group;
 }
 
+// Generate group invitation link
 export async function generateInviteLink(groupId) {
   const token = await getAuthToken();
 
   const response = await fetch(`${API_URL}/${groupId}/invite`, {
     method: 'POST',
     headers: {
-      Authorization: `Bearer ${token}`
-    }
+      Authorization: `Bearer ${token}`,
+    },
   });
 
   const result = await response.json();
@@ -100,18 +102,16 @@ export async function generateInviteLink(groupId) {
   return result.data;
 }
 
+// Accept group invitation
 export async function acceptGroupInvite(inviteToken) {
   const token = await getAuthToken();
 
-  const response = await fetch(
-    `${API_URL}/join/${inviteToken}`,
-    {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`
-      }
-    }
-  );
+  const response = await fetch(`${API_URL}/join/${inviteToken}`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
 
   const result = await response.json();
 
@@ -124,6 +124,7 @@ export async function acceptGroupInvite(inviteToken) {
   return result.data;
 }
 
+// Create expense
 export async function createExpense(groupId, expenseData) {
   const token = await getAuthToken();
 
@@ -131,9 +132,9 @@ export async function createExpense(groupId, expenseData) {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`
+      Authorization: `Bearer ${token}`,
     },
-    body: JSON.stringify(expenseData)
+    body: JSON.stringify(expenseData),
   });
 
   const result = await response.json();
@@ -142,16 +143,65 @@ export async function createExpense(groupId, expenseData) {
     throw new Error(result.message || 'Unable to create expense.');
   }
 
+  return result.data.expense;
+}
+
+// Update expense
+export async function updateExpense(groupId, expenseId, expenseData) {
+  const token = await getAuthToken();
+
+  const response = await fetch(
+    `${API_URL}/${groupId}/expenses/${expenseId}`,
+    {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(expenseData),
+    }
+  );
+
+  const result = await response.json();
+
+  if (!response.ok) {
+    throw new Error(result.message || 'Unable to update expense.');
+  }
+
+  return result.data.expense;
+}
+
+// Delete expense
+export async function deleteExpense(groupId, expenseId) {
+  const token = await getAuthToken();
+
+  const response = await fetch(
+    `${API_URL}/${groupId}/expenses/${expenseId}`,
+    {
+      method: 'DELETE',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    }
+  );
+
+  const result = await response.json();
+
+  if (!response.ok) {
+    throw new Error(result.message || 'Unable to delete expense.');
+  }
+
   return result.data;
 }
 
+// Fetch group expenses
 export async function fetchGroupExpenses(groupId) {
   const token = await getAuthToken();
 
   const response = await fetch(`${API_URL}/${groupId}/expenses`, {
     headers: {
-      Authorization: `Bearer ${token}`
-    }
+      Authorization: `Bearer ${token}`,
+    },
   });
 
   const result = await response.json();
@@ -163,13 +213,14 @@ export async function fetchGroupExpenses(groupId) {
   return result.data.expenses;
 }
 
+// Fetch group balances
 export async function fetchGroupBalances(groupId) {
   const token = await getAuthToken();
 
   const response = await fetch(`${API_URL}/${groupId}/balances`, {
     headers: {
-      Authorization: `Bearer ${token}`
-    }
+      Authorization: `Bearer ${token}`,
+    },
   });
 
   const result = await response.json();
@@ -181,13 +232,14 @@ export async function fetchGroupBalances(groupId) {
   return result.data.balances;
 }
 
+// Fetch settlement suggestions
 export async function fetchGroupSettlements(groupId) {
   const token = await getAuthToken();
 
   const response = await fetch(`${API_URL}/${groupId}/settlements`, {
     headers: {
-      Authorization: `Bearer ${token}`
-    }
+      Authorization: `Bearer ${token}`,
+    },
   });
 
   const result = await response.json();
@@ -201,7 +253,7 @@ export async function fetchGroupSettlements(groupId) {
   return result.data.settlements;
 }
 
-
+// Download settlement PDF report
 export async function downloadSettlementReport(groupId) {
   const token = await getAuthToken();
 
@@ -222,14 +274,13 @@ export async function downloadSettlementReport(groupId) {
       const result = await response.json();
       message = result.message || message;
     } catch {
-      // Keep the default error message if the response isn't JSON.
+      // Keep default error message.
     }
 
     throw new Error(message);
   }
 
   const pdfBlob = await response.blob();
-
   const objectUrl = URL.createObjectURL(pdfBlob);
   const link = document.createElement('a');
 
@@ -244,4 +295,90 @@ export async function downloadSettlementReport(groupId) {
   link.remove();
 
   URL.revokeObjectURL(objectUrl);
+}
+// Create a manual payment record
+export async function createPayment(groupId, paymentData) {
+  const token = await getAuthToken();
+
+  const response = await fetch(`${API_URL}/${groupId}/payments`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(paymentData),
+  });
+
+  const result = await response.json();
+
+  if (!response.ok) {
+    throw new Error(result.message || 'Unable to record payment.');
+  }
+
+  return result.data.payment;
+}
+
+// Fetch payment history
+export async function fetchGroupPayments(groupId) {
+  const token = await getAuthToken();
+
+  const response = await fetch(`${API_URL}/${groupId}/payments`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+  const result = await response.json();
+
+  if (!response.ok) {
+    throw new Error(result.message || 'Unable to fetch payment history.');
+  }
+
+  return result.data.payments;
+}
+
+// Confirm a payment received
+export async function confirmPayment(groupId, paymentId) {
+  const token = await getAuthToken();
+
+  const response = await fetch(
+    `${API_URL}/${groupId}/payments/${paymentId}/confirm`,
+    {
+      method: 'PATCH',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    }
+  );
+
+  const result = await response.json();
+
+  if (!response.ok) {
+    throw new Error(result.message || 'Unable to confirm payment.');
+  }
+
+  return result.data.payment;
+}
+
+// Reject a payment received
+export async function rejectPayment(groupId, paymentId) {
+  const token = await getAuthToken();
+
+  const response = await fetch(
+    `${API_URL}/${groupId}/payments/${paymentId}/reject`,
+    {
+      method: 'PATCH',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    }
+  );
+
+  const result = await response.json();
+
+  if (!response.ok) {
+    throw new Error(result.message || 'Unable to reject payment.');
+  }
+
+  return result.data.payment;
 }

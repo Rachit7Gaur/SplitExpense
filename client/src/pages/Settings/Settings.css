@@ -539,3 +539,38 @@
 .settings-form-actions {
   margin-top: 12px;
 }
+/* Password visibility controls */
+
+.settings-password-input {
+  position: relative;
+  width: 100%;
+}
+
+.settings-password-input input {
+  padding-right: 65px !important;
+}
+
+.settings-password-toggle {
+  position: absolute;
+  top: 50%;
+  right: 12px;
+  transform: translateY(-50%);
+  padding: 6px 3px;
+  border: none;
+  background: transparent;
+  color: #108367;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.settings-password-toggle:hover {
+  color: #0c7058;
+}
+
+.settings-password-toggle:focus-visible {
+  outline: 2px solid #108367;
+  outline-offset: 3px;
+  border-radius: 3px;
+}

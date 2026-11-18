@@ -7,10 +7,16 @@ import {
   fetchGroupById,
   generateInviteLink,
   createExpense,
+  updateExpense,
+  deleteExpense,
   fetchGroupExpenses,
   fetchGroupBalances,
   fetchGroupSettlements,
   downloadSettlementReport,
+  createPayment,
+  fetchGroupPayments,
+  confirmPayment,
+  rejectPayment,
 } from '../../services/groupservice';
 
 import './GroupDetails.css';
@@ -20,7 +26,19 @@ const formatCurrency = (amount) =>
     maximumFractionDigits: 2,
   })}`;
 
+  const formatPaymentDate = (date) =>
+  new Date(date).toLocaleString('en-IN', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+
 const getInitial = (name) => (name || 'U').charAt(0).toUpperCase();
+
+const getMemberId = (value) =>
+  typeof value === 'string' ? value : value?._id?.toString();
 
 function GroupDetails() {
   const { groupId } = useParams();
@@ -31,6 +49,9 @@ function GroupDetails() {
   const [expenses, setExpenses] = useState([]);
   const [balances, setBalances] = useState([]);
   const [settlements, setSettlements] = useState([]);
+
+  const [editingExpenseId, setEditingExpenseId] = useState(null);
+  const isEditingExpense = Boolean(editingExpenseId);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -51,9 +72,44 @@ function GroupDetails() {
   const [splitBetween, setSplitBetween] = useState([]);
   const [splitType, setSplitType] = useState('equal');
   const [customSplits, setCustomSplits] = useState({});
+
   const [expenseLoading, setExpenseLoading] = useState(false);
   const [expenseError, setExpenseError] = useState('');
   const [expenseMessage, setExpenseMessage] = useState('');
+
+  const [deletingExpenseId, setDeletingExpenseId] = useState(null);
+
+  const [payments, setPayments] = useState([]);
+
+const [showPaymentForm, setShowPaymentForm] = useState(false);
+const [paymentReceiverId, setPaymentReceiverId] = useState('');
+const [paymentAmount, setPaymentAmount] = useState('');
+const [paymentMethod, setPaymentMethod] = useState('upi');
+const [paymentNote, setPaymentNote] = useState('');
+
+const [paymentLoading, setPaymentLoading] = useState(false);
+const [paymentActionId, setPaymentActionId] = useState(null);
+const [paymentError, setPaymentError] = useState('');
+const [paymentMessage, setPaymentMessage] = useState('');
+
+  async function refreshFinancialData() {
+  const [
+  expenseData,
+  balanceData,
+  settlementData,
+  paymentData,
+] = await Promise.all([
+  fetchGroupExpenses(groupId),
+  fetchGroupBalances(groupId),
+  fetchGroupSettlements(groupId),
+  fetchGroupPayments(groupId),
+]);
+
+setExpenses(expenseData);
+setBalances(balanceData);
+setSettlements(settlementData);
+setPayments(paymentData);
+  }
 
   async function loadDashboard() {
     setLoading(true);
@@ -62,16 +118,24 @@ function GroupDetails() {
     try {
       const groupData = await fetchGroupById(groupId);
 
-      const [expenseData, balanceData, settlementData] = await Promise.all([
-        fetchGroupExpenses(groupId),
-        fetchGroupBalances(groupId),
-        fetchGroupSettlements(groupId),
-      ]);
-
       setGroup(groupData);
-      setExpenses(expenseData);
-      setBalances(balanceData);
-      setSettlements(settlementData);
+
+      const [
+  expenseData,
+  balanceData,
+  settlementData,
+  paymentData,
+] = await Promise.all([
+  fetchGroupExpenses(groupId),
+  fetchGroupBalances(groupId),
+  fetchGroupSettlements(groupId),
+  fetchGroupPayments(groupId),
+]);
+
+setExpenses(expenseData);
+setBalances(balanceData);
+setSettlements(settlementData);
+setPayments(paymentData);
     } catch (err) {
       setError(err.message || 'Unable to load group.');
     } finally {
@@ -85,6 +149,13 @@ function GroupDetails() {
   }, [groupId]);
 
   const members = group?.members || [];
+
+  const currentMember = members.find(
+    (member) =>
+      member.email?.toLowerCase() === user?.email?.toLowerCase()
+  );
+
+  const currentMemberId = getMemberId(currentMember);
 
   const totalExpenses = useMemo(
     () => expenses.reduce((total, expense) => total + expense.amount, 0),
@@ -154,14 +225,8 @@ function GroupDetails() {
 
   const maxPayerTotal = Math.max(...payerTotals.map((payer) => payer.total), 1);
 
-  const currentMember = members.find(
-    (member) => member.email?.toLowerCase() === user?.email?.toLowerCase()
-  );
-
   const currentBalance = balances.find(
-    (balance) =>
-      balance.userId === currentMember?._id ||
-      balance.userId?.toString() === currentMember?._id?.toString()
+    (balance) => getMemberId(balance.userId) === currentMemberId
   );
 
   const amountInPaise = Math.round(Number(amount) * 100);
@@ -177,7 +242,8 @@ function GroupDetails() {
     0
   );
 
-  function openExpenseModal() {
+  function resetExpenseForm() {
+    setEditingExpenseId(null);
     setDescription('');
     setAmount('');
     setContributions([]);
@@ -185,12 +251,67 @@ function GroupDetails() {
     setCustomSplits({});
     setSplitType('equal');
     setExpenseError('');
+    setExpenseMessage('');
+  }
+
+  function openExpenseModal() {
+    resetExpenseForm();
+    setShowExpenseForm(true);
+  }
+
+  function openEditExpenseModal(expense) {
+    const creatorId = getMemberId(expense.createdBy);
+
+    if (!creatorId || !currentMemberId || creatorId !== currentMemberId) {
+      setExpenseMessage(
+        'This expense cannot be edited because you are not its creator.'
+      );
+      return;
+    }
+
+    const existingContributions = expense.contributions?.length
+      ? expense.contributions
+      : expense.paidBy
+        ? [{ user: expense.paidBy, amount: expense.amount }]
+        : [];
+
+    setEditingExpenseId(expense._id);
+    setDescription(expense.description);
+    setAmount((expense.amount / 100).toFixed(2));
+
+    setContributions(
+      existingContributions.map((item) => ({
+        userId: getMemberId(item.user),
+        amount: (item.amount / 100).toFixed(2),
+      }))
+    );
+
+    const selectedSplitMembers = expense.splits.map((item) =>
+      getMemberId(item.user)
+    );
+
+    setSplitBetween(selectedSplitMembers);
+
+    // Custom mode preserves the exact existing paise allocations.
+    const existingCustomSplits = {};
+
+    expense.splits.forEach((item) => {
+      const memberId = getMemberId(item.user);
+      existingCustomSplits[memberId] = (item.amount / 100).toFixed(2);
+    });
+
+    setCustomSplits(existingCustomSplits);
+    setSplitType('custom');
+
+    setExpenseError('');
+    setExpenseMessage('');
     setShowExpenseForm(true);
   }
 
   function closeExpenseModal() {
     if (expenseLoading) return;
     setShowExpenseForm(false);
+    resetExpenseForm();
   }
 
   function toggleContributor(memberId) {
@@ -236,18 +357,22 @@ function GroupDetails() {
     }));
   }
 
-  async function handleAddExpense(event) {
+  async function handleSaveExpense(event) {
     event.preventDefault();
     setExpenseError('');
     setExpenseMessage('');
 
-    if (!description.trim()) {
-      setExpenseError('Please enter an expense description.');
+    if (!description.trim() || description.trim().length > 150) {
+      setExpenseError('Enter a valid description (maximum 150 characters).');
       return;
     }
 
-    if (!Number.isFinite(Number(amount)) || amountInPaise <= 0) {
-      setExpenseError('Enter a valid expense amount.');
+    if (
+      !Number.isFinite(Number(amount)) ||
+      amountInPaise <= 0 ||
+      !Number.isSafeInteger(Number(amount) * 100)
+    ) {
+      setExpenseError('Enter a valid amount with up to two decimal places.');
       return;
     }
 
@@ -256,8 +381,16 @@ function GroupDetails() {
       return;
     }
 
-    if (contributions.some((item) => !item.amount || Number(item.amount) <= 0)) {
-      setExpenseError('Enter an amount for every contributor.');
+    if (
+      contributions.some(
+        (item) =>
+          !item.amount ||
+          !Number.isFinite(Number(item.amount)) ||
+          Number(item.amount) <= 0 ||
+          !Number.isSafeInteger(Number(item.amount) * 100)
+      )
+    ) {
+      setExpenseError('Enter a valid amount for every contributor.');
       return;
     }
 
@@ -272,8 +405,16 @@ function GroupDetails() {
     }
 
     if (splitType === 'custom') {
-      if (splitBetween.some((id) => !customSplits[id] || Number(customSplits[id]) <= 0)) {
-        setExpenseError('Enter a custom share for every selected member.');
+      if (
+        splitBetween.some(
+          (id) =>
+            !customSplits[id] ||
+            !Number.isFinite(Number(customSplits[id])) ||
+            Number(customSplits[id]) <= 0 ||
+            !Number.isSafeInteger(Number(customSplits[id]) * 100)
+        )
+      ) {
+        setExpenseError('Enter a valid custom share for every selected member.');
         return;
       }
 
@@ -283,48 +424,77 @@ function GroupDetails() {
       }
     }
 
+    const expenseData = {
+      description: description.trim(),
+      amount: Number(amount),
+      contributions: contributions.map((item) => ({
+        userId: item.userId,
+        amount: Number(item.amount),
+      })),
+      splitBetween,
+      splitType,
+      customSplits:
+        splitType === 'custom'
+          ? splitBetween.map((userId) => ({
+              userId,
+              amount: Number(customSplits[userId]),
+            }))
+          : [],
+    };
+
     try {
       setExpenseLoading(true);
 
-      await createExpense(groupId, {
-        description: description.trim(),
-        amount: Number(amount),
+      if (isEditingExpense) {
+        await updateExpense(groupId, editingExpenseId, expenseData);
+      } else {
+        await createExpense(groupId, expenseData);
+      }
 
-        contributions: contributions.map((item) => ({
-          userId: item.userId,
-          amount: Number(item.amount),
-        })),
-
-        splitBetween,
-
-        splitType,
-
-        customSplits:
-          splitType === 'custom'
-            ? splitBetween.map((userId) => ({
-                userId,
-                amount: Number(customSplits[userId]),
-              }))
-            : [],
-      });
-
-      const [updatedExpenses, updatedBalances, updatedSettlements] =
-        await Promise.all([
-          fetchGroupExpenses(groupId),
-          fetchGroupBalances(groupId),
-          fetchGroupSettlements(groupId),
-        ]);
-
-      setExpenses(updatedExpenses);
-      setBalances(updatedBalances);
-      setSettlements(updatedSettlements);
+      await refreshFinancialData();
 
       setShowExpenseForm(false);
-      setExpenseMessage('Expense added successfully.');
+      resetExpenseForm();
+
+      setExpenseMessage(
+        isEditingExpense
+          ? 'Expense updated successfully.'
+          : 'Expense added successfully.'
+      );
     } catch (err) {
-      setExpenseError(err.message || 'Unable to add expense.');
+      setExpenseError(err.message || 'Unable to save expense.');
     } finally {
       setExpenseLoading(false);
+    }
+  }
+
+  async function handleDeleteExpense(expense) {
+    const creatorId = getMemberId(expense.createdBy);
+
+    if (!creatorId || !currentMemberId || creatorId !== currentMemberId) {
+      setExpenseMessage('You can only delete expenses created by you.');
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Delete "${expense.description}"? This will update the group balances and settlements.`
+    );
+
+    if (!confirmed) return;
+
+    try {
+      setDeletingExpenseId(expense._id);
+      setExpenseMessage('');
+      setExpenseError('');
+
+      await deleteExpense(groupId, expense._id);
+      await refreshFinancialData();
+
+      setExpenseMessage('Expense deleted successfully.');
+    } catch (err) {
+      setExpenseError(err.message || 'Unable to delete expense.');
+    } finally {
+      setDeletingExpenseId(null);
     }
   }
 
@@ -337,7 +507,7 @@ function GroupDetails() {
       const result = await generateInviteLink(groupId);
       setInviteLink(result.inviteLink);
     } catch (err) {
-      setInviteError(err.message);
+      setInviteError(err.message || 'Unable to generate invite link.');
     } finally {
       setInviteLoading(false);
     }
@@ -365,17 +535,90 @@ function GroupDetails() {
     }
   }
 
+  async function handleRecordPayment(event) {
+  event.preventDefault();
+
+  setPaymentError('');
+  setPaymentMessage('');
+
+  const amountInPaise = Math.round(Number(paymentAmount) * 100);
+
+  if (!paymentReceiverId) {
+    setPaymentError('Select the member receiving this payment.');
+    return;
+  }
+
+  if (
+    !Number.isFinite(Number(paymentAmount)) ||
+    amountInPaise <= 0 ||
+    !Number.isSafeInteger(Number(paymentAmount) * 100)
+  ) {
+    setPaymentError('Enter a valid amount with up to two decimal places.');
+    return;
+  }
+
+  try {
+    setPaymentLoading(true);
+
+    await createPayment(groupId, {
+      toUserId: paymentReceiverId,
+      amount: Number(paymentAmount),
+      method: paymentMethod,
+      note: paymentNote.trim(),
+    });
+
+    await refreshFinancialData();
+
+    setPaymentAmount('');
+    setPaymentNote('');
+    setPaymentReceiverId('');
+    setShowPaymentForm(false);
+
+    setPaymentMessage(
+      'Payment recorded. It is waiting for receiver confirmation.'
+    );
+  } catch (err) {
+    setPaymentError(err.message || 'Unable to record payment.');
+  } finally {
+    setPaymentLoading(false);
+  }
+}
+
+async function handlePaymentDecision(paymentId, action) {
+  setPaymentError('');
+  setPaymentMessage('');
+
+  try {
+    setPaymentActionId(paymentId);
+
+    if (action === 'confirm') {
+      await confirmPayment(groupId, paymentId);
+      setPaymentMessage('Payment confirmed successfully.');
+    } else {
+      await rejectPayment(groupId, paymentId);
+      setPaymentMessage('Payment rejected.');
+    }
+
+    await refreshFinancialData();
+  } catch (err) {
+    setPaymentError(err.message || 'Unable to update payment.');
+  } finally {
+    setPaymentActionId(null);
+  }
+}
+
   useEffect(() => {
     if (!showExpenseForm) return undefined;
 
     function handleEscape(event) {
       if (event.key === 'Escape' && !expenseLoading) {
-        setShowExpenseForm(false);
+        closeExpenseModal();
       }
     }
 
     document.addEventListener('keydown', handleEscape);
     return () => document.removeEventListener('keydown', handleEscape);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showExpenseForm, expenseLoading]);
 
   if (loading) {
@@ -411,7 +654,10 @@ function GroupDetails() {
           <div className="hero-members">
             <div className="hero-avatars">
               {members.slice(0, 5).map((member, index) => (
-                <span key={member._id} className={`hero-avatar avatar-${index % 5}`}>
+                <span
+                  key={member._id}
+                  className={`hero-avatar avatar-${index % 5}`}
+                >
                   {getInitial(member.name)}
                 </span>
               ))}
@@ -436,14 +682,31 @@ function GroupDetails() {
             Back to groups
           </button>
 
-          <button className="dashboard-primary-button" onClick={openExpenseModal}>
+          <button
+            className="dashboard-primary-button"
+            onClick={openExpenseModal}
+          >
             + Add expense
           </button>
         </div>
       </section>
 
       {reportError && (
-        <p className="dashboard-error-text" role="alert">{reportError}</p>
+        <p className="dashboard-error-text" role="alert">
+          {reportError}
+        </p>
+      )}
+
+      {expenseMessage && (
+        <p className="dashboard-success-text" role="status">
+          {expenseMessage}
+        </p>
+      )}
+
+      {expenseError && !showExpenseForm && (
+        <p className="dashboard-error-text" role="alert">
+          {expenseError}
+        </p>
       )}
 
       <section className="financial-summary">
@@ -454,24 +717,26 @@ function GroupDetails() {
 
         <article className="summary-card">
           <span>Your share</span>
-          <strong>{currentBalance ? formatCurrency(currentBalance.totalShare) : '—'}</strong>
+          <strong>
+            {currentBalance ? formatCurrency(currentBalance.totalShare) : '—'}
+          </strong>
         </article>
 
         <article className="summary-card">
           <span>{currentBalance?.netBalance < 0 ? 'You owe' : 'You are owed'}</span>
-          <strong className={
-            currentBalance?.netBalance < 0 ? 'summary-negative' : 'summary-positive'
-          }>
+          <strong
+            className={
+              currentBalance?.netBalance < 0
+                ? 'summary-negative'
+                : 'summary-positive'
+            }
+          >
             {currentBalance
               ? formatCurrency(Math.abs(currentBalance.netBalance))
               : '—'}
           </strong>
         </article>
       </section>
-
-      {expenseMessage && (
-        <p className="dashboard-success-text" role="status">{expenseMessage}</p>
-      )}
 
       <section className="dashboard-chart-grid">
         <article className="dashboard-panel spending-chart-panel">
@@ -483,12 +748,25 @@ function GroupDetails() {
           </div>
 
           {expenses.length === 0 ? (
-            <div className="chart-empty">Add expenses to see your spending trend.</div>
+            <div className="chart-empty">
+              Add expenses to see your spending trend.
+            </div>
           ) : (
             <div className="spending-chart">
-              <svg viewBox="0 0 300 145" role="img" aria-label="Daily spending over the last seven days">
+              <svg
+                viewBox="0 0 300 145"
+                role="img"
+                aria-label="Daily spending over the last seven days"
+              >
                 {[35, 75, 115].map((y) => (
-                  <line key={y} x1="10" y1={y} x2="290" y2={y} className="chart-grid-line" />
+                  <line
+                    key={y}
+                    x1="10"
+                    y1={y}
+                    x2="290"
+                    y2={y}
+                    className="chart-grid-line"
+                  />
                 ))}
 
                 <polygon points={chartArea} className="chart-area" />
@@ -496,8 +774,18 @@ function GroupDetails() {
 
                 {chartPoints.map((point, index) => (
                   <g key={index}>
-                    <circle cx={point.x} cy={point.y} r="3.5" className="chart-point" />
-                    <text x={point.x} y="138" textAnchor="middle" className="chart-label">
+                    <circle
+                      cx={point.x}
+                      cy={point.y}
+                      r="3.5"
+                      className="chart-point"
+                    />
+                    <text
+                      x={point.x}
+                      y="138"
+                      textAnchor="middle"
+                      className="chart-label"
+                    >
                       {point.label}
                     </text>
                   </g>
@@ -528,7 +816,9 @@ function GroupDetails() {
                   <div className="payer-bar-track">
                     <div
                       className={`payer-bar payer-color-${index % 5}`}
-                      style={{ width: `${(payer.total / maxPayerTotal) * 100}%` }}
+                      style={{
+                        width: `${(payer.total / maxPayerTotal) * 100}%`,
+                      }}
                     />
                   </div>
                 </div>
@@ -562,8 +852,20 @@ function GroupDetails() {
                     ? [{ user: expense.paidBy, amount: expense.amount }]
                     : [];
 
+                const creatorId = getMemberId(expense.createdBy);
+
+                const canManageExpense =
+                  Boolean(creatorId) &&
+                  Boolean(currentMemberId) &&
+                  creatorId === currentMemberId;
+
+                const isDeleting = deletingExpenseId === expense._id;
+
                 return (
-                  <article className="dashboard-expense-item" key={expense._id}>
+                  <article
+                    className="dashboard-expense-item"
+                    key={expense._id}
+                  >
                     <div className={`expense-avatar expense-avatar-${index % 5}`}>
                       {getInitial(expense.description)}
                     </div>
@@ -571,18 +873,47 @@ function GroupDetails() {
                     <div className="dashboard-expense-info">
                       <strong>{expense.description}</strong>
                       <span>
-                        {contributors.map((item) => item.user?.name || 'Unknown').join(', ')}
+                        {contributors
+                          .map((item) => item.user?.name || 'Unknown')
+                          .join(', ')}
                         {' contributed · '}
-                        {new Date(expense.createdAt).toLocaleDateString('en-IN', {
-                          day: 'numeric',
-                          month: 'short',
-                        })}
+                        {new Date(expense.createdAt).toLocaleDateString(
+                          'en-IN',
+                          {
+                            day: 'numeric',
+                            month: 'short',
+                          }
+                        )}
                       </span>
                     </div>
 
                     <strong className="dashboard-expense-amount">
                       {formatCurrency(expense.amount)}
                     </strong>
+
+                    {canManageExpense && (
+                      <div className="expense-item-actions">
+                        <button
+                          type="button"
+                          className="expense-action-button"
+                          onClick={() => openEditExpenseModal(expense)}
+                          disabled={isDeleting}
+                          aria-label={`Edit ${expense.description}`}
+                        >
+                          Edit
+                        </button>
+
+                        <button
+                          type="button"
+                          className="expense-action-button expense-delete-button"
+                          onClick={() => handleDeleteExpense(expense)}
+                          disabled={isDeleting}
+                          aria-label={`Delete ${expense.description}`}
+                        >
+                          {isDeleting ? 'Deleting...' : 'Delete'}
+                        </button>
+                      </div>
+                    )}
                   </article>
                 );
               })}
@@ -608,7 +939,7 @@ function GroupDetails() {
                   <strong>{member.name}</strong>
                   <span>{member.email}</span>
                 </div>
-                {group.createdBy?._id === member._id && (
+                {getMemberId(group.createdBy) === getMemberId(member) && (
                   <span className="creator-label">Creator</span>
                 )}
               </div>
@@ -636,14 +967,20 @@ function GroupDetails() {
 
               {inviteLink && (
                 <div className="dashboard-invite-link">
-                  <input value={inviteLink} readOnly aria-label="Invitation link" />
+                  <input
+                    value={inviteLink}
+                    readOnly
+                    aria-label="Invitation link"
+                  />
                   <button onClick={handleCopyInvite}>
                     {copied ? 'Copied' : 'Copy'}
                   </button>
                 </div>
               )}
 
-              {inviteError && <p className="dashboard-error-text">{inviteError}</p>}
+              {inviteError && (
+                <p className="dashboard-error-text">{inviteError}</p>
+              )}
             </div>
           )}
         </article>
@@ -669,13 +1006,15 @@ function GroupDetails() {
                 <span>Share</span>
                 <strong>{formatCurrency(member.totalShare)}</strong>
               </div>
-              <p className={
-                member.netBalance > 0
-                  ? 'balance-positive'
-                  : member.netBalance < 0
-                    ? 'balance-negative'
-                    : 'balance-settled'
-              }>
+              <p
+                className={
+                  member.netBalance > 0
+                    ? 'balance-positive'
+                    : member.netBalance < 0
+                      ? 'balance-negative'
+                      : 'balance-settled'
+                }
+              >
                 {member.netBalance > 0
                   ? `Gets back ${formatCurrency(member.netBalance)}`
                   : member.netBalance < 0
@@ -718,6 +1057,195 @@ function GroupDetails() {
           </div>
         )}
       </section>
+      
+      {/* Payments */}
+<section className="dashboard-panel payments-panel">
+  <div className="panel-heading">
+    <div>
+      <h2>Payments</h2>
+      <p>Record payments and track receiver confirmations.</p>
+    </div>
+
+    <button
+      type="button"
+      className="dashboard-primary-button"
+      onClick={() => {
+        setPaymentError('');
+        setPaymentMessage('');
+        setShowPaymentForm((value) => !value);
+      }}
+    >
+      {showPaymentForm ? 'Cancel' : '+ Record payment'}
+    </button>
+  </div>
+
+  {paymentMessage && (
+    <p className="dashboard-success-text" role="status">
+      {paymentMessage}
+    </p>
+  )}
+
+  {paymentError && (
+    <p className="dashboard-error-text" role="alert">
+      {paymentError}
+    </p>
+  )}
+
+  {showPaymentForm && (
+    <form className="payment-form" onSubmit={handleRecordPayment}>
+      <h3>Record a payment</h3>
+
+      <label>
+        Paying to
+        <select
+          value={paymentReceiverId}
+          onChange={(event) => setPaymentReceiverId(event.target.value)}
+          required
+        >
+          <option value="">Select receiver</option>
+
+          {settlements
+            .filter(
+              (settlement) =>
+                getMemberId(settlement.from.userId) === currentMemberId
+            )
+            .map((settlement) => (
+              <option
+                key={getMemberId(settlement.to.userId)}
+                value={getMemberId(settlement.to.userId)}
+              >
+                {settlement.to.name} — outstanding{' '}
+                {formatCurrency(settlement.amount)}
+              </option>
+            ))}
+        </select>
+      </label>
+
+      <label>
+        Amount (₹)
+        <input
+          type="number"
+          min="0.01"
+          step="0.01"
+          value={paymentAmount}
+          onChange={(event) => setPaymentAmount(event.target.value)}
+          placeholder="e.g. 500"
+          required
+        />
+      </label>
+
+      <label>
+        Payment method
+        <select
+          value={paymentMethod}
+          onChange={(event) => setPaymentMethod(event.target.value)}
+        >
+          <option value="upi">UPI</option>
+          <option value="cash">Cash</option>
+          <option value="bank_transfer">Bank transfer</option>
+        </select>
+      </label>
+
+      <label>
+        Note (optional)
+        <input
+          type="text"
+          maxLength={200}
+          value={paymentNote}
+          onChange={(event) => setPaymentNote(event.target.value)}
+          placeholder="e.g. Paid through UPI"
+        />
+      </label>
+
+      <button
+        type="submit"
+        className="dashboard-primary-button"
+        disabled={paymentLoading}
+      >
+        {paymentLoading ? 'Recording...' : 'Submit payment'}
+      </button>
+    </form>
+  )}
+
+  <div className="payment-history">
+    <h3>Payment history</h3>
+
+    {payments.length === 0 ? (
+      <div className="chart-empty">
+        No payments have been recorded yet.
+      </div>
+    ) : (
+      <div className="payment-list">
+        {payments.map((payment) => {
+          const receiverId = getMemberId(payment.toUser);
+          const isReceiver = receiverId === currentMemberId;
+          const isPending = payment.status === 'pending';
+          const isProcessing = paymentActionId === payment._id;
+
+          return (
+            <article className="payment-item" key={payment._id}>
+              <div className="payment-item-main">
+                <div>
+                  <strong>
+                    {payment.fromUser?.name || 'Unknown'} →{' '}
+                    {payment.toUser?.name || 'Unknown'}
+                  </strong>
+
+                  <span>
+                    {payment.method.replace('_', ' ').toUpperCase()}
+                    {' · '}
+                    {formatPaymentDate(payment.createdAt)}
+                  </span>
+
+                  {payment.note && <p>{payment.note}</p>}
+                </div>
+
+                <div className="payment-item-amount">
+                  <strong>{formatCurrency(payment.amount)}</strong>
+                  <span className={`payment-status status-${payment.status}`}>
+                    {payment.status}
+                  </span>
+                </div>
+              </div>
+
+              {isPending && isReceiver && (
+                <div className="payment-actions">
+                  <button
+                    type="button"
+                    className="payment-confirm-button"
+                    onClick={() =>
+                      handlePaymentDecision(payment._id, 'confirm')
+                    }
+                    disabled={isProcessing}
+                  >
+                    {isProcessing ? 'Processing...' : 'Confirm'}
+                  </button>
+
+                  <button
+                    type="button"
+                    className="payment-reject-button"
+                    onClick={() =>
+                      handlePaymentDecision(payment._id, 'reject')
+                    }
+                    disabled={isProcessing}
+                  >
+                    Reject
+                  </button>
+                </div>
+              )}
+
+              {isPending && !isReceiver && (
+                <p className="payment-waiting">
+                  Waiting for receiver confirmation.
+                </p>
+              )}
+            </article>
+          );
+        })}
+      </div>
+    )}
+  </div>
+</section>
 
       {showExpenseForm && (
         <div
@@ -734,10 +1262,15 @@ function GroupDetails() {
           >
             <div className="expense-modal-header">
               <div>
-                <p className="dashboard-eyebrow">NEW TRANSACTION</p>
-                <h2 id="expense-modal-title">Add an expense</h2>
+                <p className="dashboard-eyebrow">
+                  {isEditingExpense ? 'EDIT TRANSACTION' : 'NEW TRANSACTION'}
+                </p>
+                <h2 id="expense-modal-title">
+                  {isEditingExpense ? 'Edit expense' : 'Add an expense'}
+                </h2>
                 <p>Record who contributed and who shares the cost.</p>
               </div>
+
               <button
                 type="button"
                 className="panel-close-button"
@@ -749,7 +1282,7 @@ function GroupDetails() {
               </button>
             </div>
 
-            <form onSubmit={handleAddExpense}>
+            <form onSubmit={handleSaveExpense}>
               <label className="expense-modal-field">
                 Description
                 <input
@@ -834,11 +1367,17 @@ function GroupDetails() {
                   <h3>Who shares this expense?</h3>
                   <span>{splitBetween.length} selected</span>
                 </div>
-                <p>These members owe the expense. They do not have to be the contributors.</p>
+                <p>
+                  These members owe the expense. They do not have to be the
+                  contributors.
+                </p>
 
                 <div className="expense-split-members">
                   {members.map((member) => (
-                    <label className="expense-member-checkbox" key={member._id}>
+                    <label
+                      className="expense-member-checkbox"
+                      key={member._id}
+                    >
                       <input
                         type="checkbox"
                         checked={splitBetween.includes(member._id)}
@@ -873,33 +1412,38 @@ function GroupDetails() {
                   </label>
                 </div>
 
-                {splitType === 'equal' && splitBetween.length > 0 && amountInPaise > 0 && (
-                  <div className="expense-equal-preview">
-                    {splitBetween.map((memberId) => {
-                      const member = members.find((entry) => entry._id === memberId);
-                      const share = Math.floor(amountInPaise / splitBetween.length);
+                {splitType === 'equal' &&
+                  splitBetween.length > 0 &&
+                  amountInPaise > 0 && (
+                    <div className="expense-equal-preview">
+                      {splitBetween.map((memberId) => {
+                        const member = members.find(
+                          (entry) => entry._id === memberId
+                        );
+                        const share = Math.floor(
+                          amountInPaise / splitBetween.length
+                        );
 
-                      return (
-                        <div key={memberId}>
-                          <span>{member?.name}</span>
-                          <strong>
-                            {formatCurrency(
-                              share
-                            )}
-                          </strong>
-                        </div>
-                      );
-                    })}
-                    <small>
-                      Any remaining paise are distributed automatically when saved.
-                    </small>
-                  </div>
-                )}
+                        return (
+                          <div key={memberId}>
+                            <span>{member?.name}</span>
+                            <strong>{formatCurrency(share)}</strong>
+                          </div>
+                        );
+                      })}
+                      <small>
+                        Any remaining paise are distributed automatically when
+                        saved.
+                      </small>
+                    </div>
+                  )}
 
                 {splitType === 'custom' && (
                   <div className="expense-custom-splits">
                     {splitBetween.map((memberId) => {
-                      const member = members.find((entry) => entry._id === memberId);
+                      const member = members.find(
+                        (entry) => entry._id === memberId
+                      );
 
                       return (
                         <label key={memberId}>
@@ -928,7 +1472,9 @@ function GroupDetails() {
               </div>
 
               {expenseError && (
-                <p className="dashboard-error-text" role="alert">{expenseError}</p>
+                <p className="dashboard-error-text" role="alert">
+                  {expenseError}
+                </p>
               )}
 
               <div className="expense-modal-actions">
@@ -946,7 +1492,11 @@ function GroupDetails() {
                   className="dashboard-primary-button"
                   disabled={expenseLoading}
                 >
-                  {expenseLoading ? 'Saving...' : 'Save expense'}
+                  {expenseLoading
+                    ? 'Saving...'
+                    : isEditingExpense
+                      ? 'Update expense'
+                      : 'Save expense'}
                 </button>
               </div>
             </form>

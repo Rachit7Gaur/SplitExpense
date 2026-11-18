@@ -731,3 +731,76 @@
 .auth-back-btn:hover {
   background: #f0f8f5;
 }
+
+/* Password visibility toggle */
+
+.auth-password-input {
+  position: relative;
+  width: 100%;
+}
+
+.auth-password-input input {
+  padding-right: 65px;
+}
+
+.auth-password-toggle {
+  position: absolute;
+  top: 50%;
+  right: 14px;
+  transform: translateY(-50%);
+  padding: 6px 3px;
+  border: none;
+  background: transparent;
+  color: #108367;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.auth-password-toggle:hover {
+  color: #0c7058;
+}
+
+.auth-password-toggle:focus-visible {
+  outline: 2px solid #108367;
+  outline-offset: 3px;
+  border-radius: 3px;
+}
+
+.auth-forgot-password {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: -8px;
+  margin-bottom: 18px;
+}
+
+.auth-forgot-password button {
+  border: none;
+  background: transparent;
+  color: #276b50;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 4px 0;
+}
+
+.auth-forgot-password button:hover {
+  text-decoration: underline;
+}
+
+.auth-forgot-password button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.auth-success {
+  padding: 12px 14px;
+  margin-bottom: 16px;
+  border: 1px solid #b7dfc7;
+  border-radius: 8px;
+  background: #edf8f0;
+  color: #23643c;
+  font-size: 13px;
+  line-height: 1.5;
+}

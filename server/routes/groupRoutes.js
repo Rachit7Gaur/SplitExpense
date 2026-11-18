@@ -8,7 +8,7 @@ const {
   getMyGroups,
   getGroupById,
   generateInviteLink,
-  acceptInvite
+  acceptInvite,
 } = require('../controllers/groupController');
 
 const {
@@ -17,13 +17,21 @@ const {
 
 const {
   createExpense,
+  updateExpense,
+  deleteExpense,
   getGroupExpenses,
   getGroupBalances,
-  getGroupSettlements
+  getGroupSettlements,
 } = require('../controllers/expenseController');
 
-const router = express.Router();
+const {
+  createPayment,
+  getGroupPayments,
+  confirmPayment,
+  rejectPayment,
+} = require('../controllers/paymentController');
 
+const router = express.Router();
 
 router.use(authenticateUser, requireVerifiedEmail);
 
@@ -31,14 +39,22 @@ router.get('/', getMyGroups);
 router.post('/', validateGroupInput, createGroup);
 
 router.post('/:groupId/expenses', createExpense);
+router.put('/:groupId/expenses/:expenseId', updateExpense);
+router.delete('/:groupId/expenses/:expenseId', deleteExpense);
+
 router.get('/:groupId/expenses', getGroupExpenses);
 router.get('/:groupId/balances', getGroupBalances);
 router.get('/:groupId/settlements', getGroupSettlements);
-router.get('/:groupId/settlement-report',downloadSettlementReport);
+
+router.post('/:groupId/payments', createPayment);
+router.get('/:groupId/payments', getGroupPayments);
+router.patch('/:groupId/payments/:paymentId/confirm', confirmPayment);
+router.patch('/:groupId/payments/:paymentId/reject', rejectPayment);
+
+router.get('/:groupId/settlement-report', downloadSettlementReport);
 
 router.get('/:groupId', getGroupById);
 router.post('/:groupId/invite', generateInviteLink);
 router.post('/join/:token', acceptInvite);
-
 
 module.exports = router;

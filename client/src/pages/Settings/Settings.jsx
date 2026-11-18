@@ -32,6 +32,9 @@ function Settings() {
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [otp, setOtp] = useState('');
 
   const [verificationId, setVerificationId] = useState('');
@@ -88,6 +91,9 @@ function Settings() {
     setCurrentPassword('');
     setNewPassword('');
     setConfirmPassword('');
+    setShowCurrentPassword(false);
+    setShowNewPassword(false);
+    setShowConfirmPassword(false);
 
     if (type === 'name') setName(user?.displayName || '');
     if (type === 'email') setNewEmail(user?.email || '');
@@ -541,84 +547,150 @@ function Settings() {
         );
 
       case 'password':
-        return hasPasswordProvider ? (
-          <form onSubmit={handlePasswordUpdate}>
-            <label htmlFor="settings-current-password">Current password</label>
-            <input
-              id="settings-current-password"
-              type="password"
-              autoComplete="current-password"
-              value={currentPassword}
-              onChange={(e) => setCurrentPassword(e.target.value)}
-              required
-            />
+  return hasPasswordProvider ? (
+    <form onSubmit={handlePasswordUpdate}>
+      <label htmlFor="settings-current-password">
+        Current password
+      </label>
 
-            <label htmlFor="settings-new-password">New password</label>
-            <input
-              id="settings-new-password"
-              type="password"
-              autoComplete="new-password"
-              minLength={8}
-              value={newPassword}
-              onChange={(e) => setNewPassword(e.target.value)}
-              required
-            />
+      <div className="settings-password-input">
+        <input
+          id="settings-current-password"
+          type={showCurrentPassword ? 'text' : 'password'}
+          autoComplete="current-password"
+          value={currentPassword}
+          onChange={(e) => setCurrentPassword(e.target.value)}
+          required
+        />
 
-            <label htmlFor="settings-confirm-password">
-              Confirm new password
-            </label>
-            <input
-              id="settings-confirm-password"
-              type="password"
-              autoComplete="new-password"
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              required
-            />
+        <button
+          type="button"
+          className="settings-password-toggle"
+          onClick={() => setShowCurrentPassword((previous) => !previous)}
+          aria-label={showCurrentPassword ? 'Hide current password' : 'Show current password'}
+        >
+          {showCurrentPassword ? 'Hide' : 'Show'}
+        </button>
+      </div>
 
-            <ModalActions
-              loading={loading}
-              submitText="Update password"
-              onCancel={closeModal}
-            />
-          </form>
-        ) : (
-          <form onSubmit={handleSetPassword}>
-            <p className="settings-modal-note">
-              Set a password for your existing Google account. Your account,
-              groups and expenses will remain connected to the same profile.
-            </p>
+      <label htmlFor="settings-new-password">
+        New password
+      </label>
 
-            <label htmlFor="settings-new-password">New password</label>
-            <input
-              id="settings-new-password"
-              type="password"
-              autoComplete="new-password"
-              minLength={8}
-              value={newPassword}
-              onChange={(e) => setNewPassword(e.target.value)}
-              required
-            />
+      <div className="settings-password-input">
+        <input
+          id="settings-new-password"
+          type={showNewPassword ? 'text' : 'password'}
+          autoComplete="new-password"
+          minLength={8}
+          value={newPassword}
+          onChange={(e) => setNewPassword(e.target.value)}
+          required
+        />
 
-            <label htmlFor="settings-confirm-password">
-              Confirm password
-            </label>
-            <input
-              id="settings-confirm-password"
-              type="password"
-              autoComplete="new-password"
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              required
-            />
+        <button
+          type="button"
+          className="settings-password-toggle"
+          onClick={() => setShowNewPassword((previous) => !previous)}
+          aria-label={showNewPassword ? 'Hide new password' : 'Show new password'}
+        >
+          {showNewPassword ? 'Hide' : 'Show'}
+        </button>
+      </div>
 
-            <ModalActions
-              loading={loading}
-              submitText="Set password"
-              onCancel={closeModal}
-            />
-          </form>
-        );
+      <label htmlFor="settings-confirm-password">
+        Confirm new password
+      </label>
+
+      <div className="settings-password-input">
+        <input
+          id="settings-confirm-password"
+          type={showConfirmPassword ? 'text' : 'password'}
+          autoComplete="new-password"
+          value={confirmPassword}
+          onChange={(e) => setConfirmPassword(e.target.value)}
+          required
+        />
+
+        <button
+          type="button"
+          className="settings-password-toggle"
+          onClick={() => setShowConfirmPassword((previous) => !previous)}
+          aria-label={showConfirmPassword ? 'Hide confirm password' : 'Show confirm password'}
+        >
+          {showConfirmPassword ? 'Hide' : 'Show'}
+        </button>
+      </div>
+
+      <ModalActions
+        loading={loading}
+        submitText="Update password"
+        onCancel={closeModal}
+      />
+    </form>
+  ) : (
+    <form onSubmit={handleSetPassword}>
+      <p className="settings-modal-note">
+        Set a password for your existing Google account. Your account,
+        groups and expenses will remain connected to the same profile.
+      </p>
+
+      <label htmlFor="settings-new-password">
+        New password
+      </label>
+
+      <div className="settings-password-input">
+        <input
+          id="settings-new-password"
+          type={showNewPassword ? 'text' : 'password'}
+          autoComplete="new-password"
+          minLength={8}
+          value={newPassword}
+          onChange={(e) => setNewPassword(e.target.value)}
+          required
+        />
+
+        <button
+          type="button"
+          className="settings-password-toggle"
+          onClick={() => setShowNewPassword((previous) => !previous)}
+          aria-label={showNewPassword ? 'Hide new password' : 'Show new password'}
+        >
+          {showNewPassword ? 'Hide' : 'Show'}
+        </button>
+      </div>
+
+      <label htmlFor="settings-confirm-password">
+        Confirm password
+      </label>
+
+      <div className="settings-password-input">
+        <input
+          id="settings-confirm-password"
+          type={showConfirmPassword ? 'text' : 'password'}
+          autoComplete="new-password"
+          value={confirmPassword}
+          onChange={(e) => setConfirmPassword(e.target.value)}
+          required
+        />
+
+        <button
+          type="button"
+          className="settings-password-toggle"
+          onClick={() => setShowConfirmPassword((previous) => !previous)}
+          aria-label={showConfirmPassword ? 'Hide confirm password' : 'Show confirm password'}
+        >
+          {showConfirmPassword ? 'Hide' : 'Show'}
+        </button>
+      </div>
+
+      <ModalActions
+        loading={loading}
+        submitText="Set password"
+        onCancel={closeModal}
+      />
+    </form>
+  );
 
       default:
         return null;
