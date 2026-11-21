@@ -1,8 +1,5 @@
-
 import {
-  createContext,
   useCallback,
-  useContext,
   useEffect,
   useRef,
   useState,
@@ -10,10 +7,11 @@ import {
 
 import { onIdTokenChanged, signOut } from 'firebase/auth';
 import { auth } from '../firebase';
+import API_BASE_URL from '../config/api';
 
-const AuthContext = createContext(null);
+import AuthContext from './AuthContext';
 
-const API_BASE_URL = 'http://localhost:5000/api';
+
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
@@ -116,14 +114,4 @@ export function AuthProvider({ children }) {
       {children}
     </AuthContext.Provider>
   );
-}
-
-export function useAuth() {
-  const context = useContext(AuthContext);
-
-  if (!context) {
-    throw new Error('useAuth must be used inside AuthProvider.');
-  }
-
-  return context;
 }

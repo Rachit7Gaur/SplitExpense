@@ -21,6 +21,7 @@ const paymentSchema = new mongoose.Schema(
       required: true,
     },
 
+    // Amount is stored in paise, not rupees.
     amount: {
       type: Number,
       required: true,
@@ -42,6 +43,23 @@ const paymentSchema = new mongoose.Schema(
       trim: true,
       maxlength: [200, 'Note cannot exceed 200 characters'],
       default: '',
+    },
+
+    // UPI transaction reference submitted by the payer.
+    transactionReference: {
+      type: String,
+      trim: true,
+      maxlength: [
+        100,
+        'Transaction reference cannot exceed 100 characters',
+      ],
+      default: null,
+    },
+
+    // Time when payer submitted the transaction reference.
+    referenceSubmittedAt: {
+      type: Date,
+      default: null,
     },
 
     status: {
@@ -73,13 +91,27 @@ const paymentSchema = new mongoose.Schema(
   }
 );
 
+// Indexes
 paymentSchema.index({ groupId: 1, createdAt: -1 });
-paymentSchema.index({ groupId: 1, fromUser: 1, toUser: 1, status: 1 });
 
+paymentSchema.index({
+  groupId: 1,
+  fromUser: 1,
+  toUser: 1,
+  status: 1,
+});
+
+// Payer and receiver cannot be the same user.
 paymentSchema.pre('validate', function () {
-  if (this.fromUser && this.toUser &&
-      this.fromUser.toString() === this.toUser.toString()) {
-    this.invalidate('toUser', 'Payer and receiver must be different users.');
+  if (
+    this.fromUser &&
+    this.toUser &&
+    this.fromUser.toString() === this.toUser.toString()
+  ) {
+    this.invalidate(
+      'toUser',
+      'Payer and receiver must be different users.'
+    );
   }
 });
 

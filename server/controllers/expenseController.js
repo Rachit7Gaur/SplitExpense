@@ -1,26 +1,52 @@
+
 const mongoose = require('mongoose');
 const Expense = require('../models/Expense');
-const Payment = require('../models/Payment'); // NEW
+const Payment = require('../models/Payment');
 const Group = require('../models/Group');
 const User = require('../models/User');
 const calculateGroupFinancials = require('../services/groupFinancialService');
+const withGroupTransaction = require('../utils/withGroupTransaction');
+
+// --------------------------------------------------
+// HELPERS
+// --------------------------------------------------
+
+function createControllerError(message, statusCode = 400) {
+  const error = new Error(message);
+  error.statusCode = statusCode;
+  return error;
+}
 
 function validRupeeAmount(value) {
+  if (
+    typeof value !== 'number' ||
+    !Number.isFinite(value) ||
+    value <= 0
+  ) {
+    return false;
+  }
+
+  const paise = value * 100;
+
   return (
-    typeof value === 'number' &&
-    Number.isFinite(value) &&
-    value > 0 &&
-    Number.isSafeInteger(value * 100)
+    Number.isSafeInteger(Math.round(paise)) &&
+    Math.abs(paise - Math.round(paise)) < 1e-7
   );
 }
 
-function validUniqueMemberIds(ids, validIds) {
-  if (!Array.isArray(ids) || ids.length === 0) return false;
+function toPaise(value) {
+  return Math.round(value * 100);
+}
 
-  const unique = new Set(ids);
+function validUniqueMemberIds(ids, validIds) {
+  if (!Array.isArray(ids) || ids.length === 0) {
+    return false;
+  }
+
+  const uniqueIds = new Set(ids);
 
   return (
-    unique.size === ids.length &&
+    uniqueIds.size === ids.length &&
     ids.every(
       (id) =>
         typeof id === 'string' &&
@@ -40,7 +66,7 @@ function distributeEqual(amount, userIds) {
   }));
 }
 
-function validateExpensePayload(body, validIds) {
+function validateExpensePayload(body = {}, validIds) {
   const {
     description,
     amount,
@@ -55,9 +81,7 @@ function validateExpensePayload(body, validIds) {
     !description.trim() ||
     description.trim().length > 150
   ) {
-    return {
-      error: 'Enter a valid expense description.',
-    };
+    return { error: 'Enter a valid expense description.' };
   }
 
   if (!validRupeeAmount(amount)) {
@@ -70,9 +94,9 @@ function validateExpensePayload(body, validIds) {
     return { error: 'Invalid split type.' };
   }
 
-  const amountInPaise = Math.round(amount * 100);
+  const amountInPaise = toPaise(amount);
 
-  // Contributors validation
+  // Validate contributors
   if (!Array.isArray(contributions) || contributions.length === 0) {
     return { error: 'Add at least one contributor.' };
   }
@@ -95,7 +119,7 @@ function validateExpensePayload(body, validIds) {
       };
     }
 
-    const contributionInPaise = Math.round(item.amount * 100);
+    const contributionInPaise = toPaise(item.amount);
     contributionTotal += contributionInPaise;
 
     normalizedContributions.push({
@@ -113,7 +137,7 @@ function validateExpensePayload(body, validIds) {
     };
   }
 
-  // Split members validation
+  // Validate split members
   if (!validUniqueMemberIds(splitBetween, validIds)) {
     return {
       error: 'Select at least one valid member for the split.',
@@ -153,7 +177,7 @@ function validateExpensePayload(body, validIds) {
         };
       }
 
-      const shareInPaise = Math.round(item.amount * 100);
+      const shareInPaise = toPaise(item.amount);
       splitTotal += shareInPaise;
 
       splits.push({
@@ -209,11 +233,63 @@ async function getGroupForCurrentUser(groupId, firebaseUid) {
   return { user, group };
 }
 
+function getValidMemberIds(group) {
+  return new Set(group.members.map((id) => id.toString()));
+}
+
+async function populateExpense(expenseId) {
+  return Expense.findById(expenseId)
+    .populate('paidBy', 'name email')
+    .populate('createdBy', 'name email')
+    .populate('contributions.user', 'name email')
+    .populate('splits.user', 'name email');
+}
+
+function sendControllerError(res, error, fallbackMessage) {
+  console.error(fallbackMessage, error);
+
+  if (error.statusCode) {
+    return res.status(error.statusCode).json({
+      success: false,
+      message: error.message,
+    });
+  }
+
+  if (error.name === 'ValidationError') {
+    return res.status(400).json({
+      success: false,
+      message: error.message,
+    });
+  }
+
+  if (
+    error.message === 'GROUP_NOT_FOUND' ||
+    error.message === 'INVALID_GROUP_ID'
+  ) {
+    return res.status(404).json({
+      success: false,
+      message: 'Group not found.',
+    });
+  }
+
+  return res.status(500).json({
+    success: false,
+    message: fallbackMessage,
+  });
+}
+
+// --------------------------------------------------
+// CREATE EXPENSE
+// --------------------------------------------------
+
 async function createExpense(req, res) {
   try {
     const { groupId } = req.params;
 
-    const access = await getGroupForCurrentUser(groupId, req.user.uid);
+    const access = await getGroupForCurrentUser(
+      groupId,
+      req.user.uid
+    );
 
     if (access.error) {
       return res.status(access.status).json({
@@ -222,30 +298,44 @@ async function createExpense(req, res) {
       });
     }
 
-    const { user, group } = access;
+    const { user } = access;
 
-    const validIds = new Set(group.members.map((id) => id.toString()));
+    const expenseId = await withGroupTransaction(
+      groupId,
+      async (session, lockedGroup) => {
+        const isMember = lockedGroup.members.some(
+          (memberId) => memberId.toString() === user._id.toString()
+        );
 
-    const validation = validateExpensePayload(req.body, validIds);
+        if (!isMember) {
+          throw createControllerError(
+            'You are no longer a member of this group.',
+            403
+          );
+        }
 
-    if (validation.error) {
-      return res.status(400).json({
-        success: false,
-        message: validation.error,
-      });
-    }
+        const validation = validateExpensePayload(
+          req.body,
+          getValidMemberIds(lockedGroup)
+        );
 
-    const expense = await Expense.create({
-      ...validation.data,
-      groupId: group._id,
-      createdBy: user._id,
-    });
+        if (validation.error) {
+          throw createControllerError(validation.error, 400);
+        }
 
-    await expense.populate([
-      { path: 'createdBy', select: 'name email' },
-      { path: 'contributions.user', select: 'name email' },
-      { path: 'splits.user', select: 'name email' },
-    ]);
+        const expense = new Expense({
+          ...validation.data,
+          groupId: lockedGroup._id,
+          createdBy: user._id,
+        });
+
+        await expense.save({ session });
+
+        return expense._id.toString();
+      }
+    );
+
+    const expense = await populateExpense(expenseId);
 
     return res.status(201).json({
       success: true,
@@ -253,34 +343,36 @@ async function createExpense(req, res) {
       data: { expense },
     });
   } catch (error) {
-    console.error('Create expense error:', error);
-
-    if (error.name === 'ValidationError') {
-      return res.status(400).json({
-        success: false,
-        message: error.message,
-      });
-    }
-
-    return res.status(500).json({
-      success: false,
-      message: 'Unable to create expense.',
-    });
+    return sendControllerError(
+      res,
+      error,
+      'Unable to create expense.'
+    );
   }
 }
+
+// --------------------------------------------------
+// UPDATE EXPENSE
+// --------------------------------------------------
 
 async function updateExpense(req, res) {
   try {
     const { groupId, expenseId } = req.params;
 
-    if (!mongoose.isValidObjectId(expenseId)) {
+    if (
+      !mongoose.isValidObjectId(groupId) ||
+      !mongoose.isValidObjectId(expenseId)
+    ) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid expense ID.',
+        message: 'Invalid group ID or expense ID.',
       });
     }
 
-    const access = await getGroupForCurrentUser(groupId, req.user.uid);
+    const access = await getGroupForCurrentUser(
+      groupId,
+      req.user.uid
+    );
 
     if (access.error) {
       return res.status(access.status).json({
@@ -289,48 +381,59 @@ async function updateExpense(req, res) {
       });
     }
 
-    const { user, group } = access;
+    const { user } = access;
 
-    const expense = await Expense.findOne({
-      _id: expenseId,
-      groupId: group._id,
-    });
+    const updatedExpenseId = await withGroupTransaction(
+      groupId,
+      async (session, lockedGroup) => {
+        const isMember = lockedGroup.members.some(
+          (memberId) => memberId.toString() === user._id.toString()
+        );
 
-    if (!expense) {
-      return res.status(404).json({
-        success: false,
-        message: 'Expense not found.',
-      });
-    }
+        if (!isMember) {
+          throw createControllerError(
+            'You are no longer a member of this group.',
+            403
+          );
+        }
 
-    // Ownership is checked on the server, not trusted from the client.
-    if (!expense.createdBy || expense.createdBy.toString() !== user._id.toString()) {
-      return res.status(403).json({
-        success: false,
-        message: 'Only the person who created this expense can edit it.',
-      });
-    }
+        const expense = await Expense.findOne({
+          _id: expenseId,
+          groupId: lockedGroup._id,
+        }).session(session);
 
-    const validIds = new Set(group.members.map((id) => id.toString()));
+        if (!expense) {
+          throw createControllerError('Expense not found.', 404);
+        }
 
-    const validation = validateExpensePayload(req.body, validIds);
+        if (
+          !expense.createdBy ||
+          expense.createdBy.toString() !== user._id.toString()
+        ) {
+          throw createControllerError(
+            'Only the person who created this expense can edit it.',
+            403
+          );
+        }
 
-    if (validation.error) {
-      return res.status(400).json({
-        success: false,
-        message: validation.error,
-      });
-    }
+        const validation = validateExpensePayload(
+          req.body,
+          getValidMemberIds(lockedGroup)
+        );
 
-    Object.assign(expense, validation.data);
+        if (validation.error) {
+          throw createControllerError(validation.error, 400);
+        }
 
-    await expense.save();
+        Object.assign(expense, validation.data);
 
-    await expense.populate([
-      { path: 'createdBy', select: 'name email' },
-      { path: 'contributions.user', select: 'name email' },
-      { path: 'splits.user', select: 'name email' },
-    ]);
+        await expense.save({ session });
+
+        return expense._id.toString();
+      }
+    );
+
+    const expense = await populateExpense(updatedExpenseId);
 
     return res.status(200).json({
       success: true,
@@ -338,27 +441,26 @@ async function updateExpense(req, res) {
       data: { expense },
     });
   } catch (error) {
-    console.error('Update expense error:', error);
-
-    if (error.name === 'ValidationError') {
-      return res.status(400).json({
-        success: false,
-        message: error.message,
-      });
-    }
-
-    return res.status(500).json({
-      success: false,
-      message: 'Unable to update expense.',
-    });
+    return sendControllerError(
+      res,
+      error,
+      'Unable to update expense.'
+    );
   }
 }
+
+// --------------------------------------------------
+// GET GROUP EXPENSES
+// --------------------------------------------------
 
 async function getGroupExpenses(req, res) {
   try {
     const { groupId } = req.params;
 
-    const access = await getGroupForCurrentUser(groupId, req.user.uid);
+    const access = await getGroupForCurrentUser(
+      groupId,
+      req.user.uid
+    );
 
     if (access.error) {
       return res.status(access.status).json({
@@ -367,7 +469,9 @@ async function getGroupExpenses(req, res) {
       });
     }
 
-    const expenses = await Expense.find({ groupId: access.group._id })
+    const expenses = await Expense.find({
+      groupId: access.group._id,
+    })
       .sort({ createdAt: -1 })
       .populate('paidBy', 'name email')
       .populate('createdBy', 'name email')
@@ -389,11 +493,18 @@ async function getGroupExpenses(req, res) {
   }
 }
 
+// --------------------------------------------------
+// GET GROUP BALANCES
+// --------------------------------------------------
+
 async function getGroupBalances(req, res) {
   try {
     const { groupId } = req.params;
 
-    const access = await getGroupForCurrentUser(groupId, req.user.uid);
+    const access = await getGroupForCurrentUser(
+      groupId,
+      req.user.uid
+    );
 
     if (access.error) {
       return res.status(access.status).json({
@@ -435,11 +546,18 @@ async function getGroupBalances(req, res) {
   }
 }
 
+// --------------------------------------------------
+// GET GROUP SETTLEMENTS
+// --------------------------------------------------
+
 async function getGroupSettlements(req, res) {
   try {
     const { groupId } = req.params;
 
-    const access = await getGroupForCurrentUser(groupId, req.user.uid);
+    const access = await getGroupForCurrentUser(
+      groupId,
+      req.user.uid
+    );
 
     if (access.error) {
       return res.status(access.status).json({
@@ -481,19 +599,28 @@ async function getGroupSettlements(req, res) {
   }
 }
 
+// --------------------------------------------------
+// DELETE EXPENSE
+// --------------------------------------------------
 
 async function deleteExpense(req, res) {
   try {
     const { groupId, expenseId } = req.params;
 
-    if (!mongoose.isValidObjectId(expenseId)) {
+    if (
+      !mongoose.isValidObjectId(groupId) ||
+      !mongoose.isValidObjectId(expenseId)
+    ) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid expense ID.',
+        message: 'Invalid group ID or expense ID.',
       });
     }
 
-    const access = await getGroupForCurrentUser(groupId, req.user.uid);
+    const access = await getGroupForCurrentUser(
+      groupId,
+      req.user.uid
+    );
 
     if (access.error) {
       return res.status(access.status).json({
@@ -502,52 +629,72 @@ async function deleteExpense(req, res) {
       });
     }
 
-    const { user, group } = access;
+    const { user } = access;
 
-    const expense = await Expense.findOne({
-      _id: expenseId,
-      groupId: group._id,
-    });
+    const deletedExpenseId = await withGroupTransaction(
+      groupId,
+      async (session, lockedGroup) => {
+        const isMember = lockedGroup.members.some(
+          (memberId) => memberId.toString() === user._id.toString()
+        );
 
-    if (!expense) {
-      return res.status(404).json({
-        success: false,
-        message: 'Expense not found.',
-      });
-    }
+        if (!isMember) {
+          throw createControllerError(
+            'You are no longer a member of this group.',
+            403
+          );
+        }
 
-    if (
-      !expense.createdBy ||
-      expense.createdBy.toString() !== user._id.toString()
-    ) {
-      return res.status(403).json({
-        success: false,
-        message: 'Only the person who created this expense can delete it.',
-      });
-    }
+        const expense = await Expense.findOne({
+          _id: expenseId,
+          groupId: lockedGroup._id,
+        }).session(session);
 
-    await Expense.deleteOne({ _id: expense._id });
+        if (!expense) {
+          throw createControllerError('Expense not found.', 404);
+        }
+
+        if (
+          !expense.createdBy ||
+          expense.createdBy.toString() !== user._id.toString()
+        ) {
+          throw createControllerError(
+            'Only the person who created this expense can delete it.',
+            403
+          );
+        }
+
+        await Expense.deleteOne(
+          { _id: expense._id },
+          { session }
+        );
+
+        return expense._id.toString();
+      }
+    );
 
     return res.status(200).json({
       success: true,
       message: 'Expense deleted successfully.',
-      data: { expenseId: expense._id },
+      data: { expenseId: deletedExpenseId },
     });
   } catch (error) {
-    console.error('Delete expense error:', error);
-
-    return res.status(500).json({
-      success: false,
-      message: 'Unable to delete expense.',
-    });
+    return sendControllerError(
+      res,
+      error,
+      'Unable to delete expense.'
+    );
   }
 }
 
+// --------------------------------------------------
+// EXPORTS
+// --------------------------------------------------
 
 module.exports = {
-  deleteExpense,
   createExpense,
   updateExpense,
+  deleteExpense,
   getGroupExpenses,
   getGroupBalances,
   getGroupSettlements,

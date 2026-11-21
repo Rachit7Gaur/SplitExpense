@@ -29,6 +29,7 @@ const {
   getGroupPayments,
   confirmPayment,
   rejectPayment,
+  submitPaymentReference,
 } = require('../controllers/paymentController');
 
 const router = express.Router();
@@ -50,6 +51,7 @@ router.post('/:groupId/payments', createPayment);
 router.get('/:groupId/payments', getGroupPayments);
 router.patch('/:groupId/payments/:paymentId/confirm', confirmPayment);
 router.patch('/:groupId/payments/:paymentId/reject', rejectPayment);
+router.patch('/:groupId/payments/:paymentId/reference',submitPaymentReference);
 
 router.get('/:groupId/settlement-report', downloadSettlementReport);
 

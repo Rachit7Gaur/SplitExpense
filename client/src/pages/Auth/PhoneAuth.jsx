@@ -1,4 +1,3 @@
-
 import { useEffect, useRef, useState } from 'react';
 import {
   RecaptchaVerifier,
@@ -9,6 +8,7 @@ import {
 } from 'firebase/auth';
 
 import { auth } from '../../firebase';
+import API_BASE_URL from '../../config/api';
 import './PhoneAuth.css';
 
 function PhoneAuth() {
@@ -51,7 +51,6 @@ function PhoneAuth() {
       });
     } catch (err) {
       console.error('reCAPTCHA initialization error:', err);
-      setError('Could not initialize reCAPTCHA. Refresh the page.');
     }
 
     return () => {
@@ -224,7 +223,7 @@ function PhoneAuth() {
       const token = await currentUser.getIdToken(true);
 
       const response = await fetch(
-        'http://localhost:5000/api/auth/complete-profile',
+        `${API_BASE_URL}/auth/complete-profile`,
         {
           method: 'POST',
           headers: {

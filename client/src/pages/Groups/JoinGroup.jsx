@@ -13,7 +13,7 @@ function JoinGroup() {
   useEffect(() => {
     async function joinGroup() {
       try {
-        const result = await acceptGroupInvite(token);
+        await acceptGroupInvite(token);
 
         setMessage('You have successfully joined the group!');
       } catch (err) {

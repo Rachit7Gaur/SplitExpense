@@ -9,6 +9,7 @@ const rateLimit = require('express-rate-limit');
 const connectDB = require('./config/db');
 const groupRoutes = require('./routes/groupRoutes');
 const authRoutes = require('./routes/authRoutes');
+const paymentProfileRoutes = require('./routes/paymentProfileRoutes');
 
 const {
   notFound,
@@ -50,6 +51,7 @@ app.get('/', (req, res) => {
 
 app.use('/api/auth', authRoutes);
 app.use('/api/groups', groupRoutes);
+app.use('/api/payment-profile', paymentProfileRoutes);
 
 app.use(notFound);
 app.use(errorHandler);

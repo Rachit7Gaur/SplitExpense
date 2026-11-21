@@ -1,5 +1,4 @@
-
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   EmailAuthProvider,
@@ -16,10 +15,15 @@ import {
   verifyBeforeUpdateEmail,
 } from 'firebase/auth';
 import { auth } from '../../firebase';
-import { useAuth } from '../../context/AuthContext';
+import API_BASE_URL from '../../config/api';
+import { useAuth } from '../../context/useAuth';
+import {
+  fetchPaymentProfile,
+  updatePaymentProfile,
+} from '../../services/paymentProfileService';
 import './Settings.css';
 
-const API_BASE_URL = 'http://localhost:5000/api';
+
 
 function Settings() {
   const { user, logout } = useAuth();
@@ -42,20 +46,49 @@ function Settings() {
   const [loggingOut, setLoggingOut] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
-  const [providerVersion, setProviderVersion] = useState(0);
+  const [, setProviderVersion] = useState(0);
+
+  // UPI payment profile state
+  const [upiId, setUpiId] = useState('');
+  const [upiActive, setUpiActive] = useState(false);
+  const [upiLoading, setUpiLoading] = useState(true);
+  const [upiSaving, setUpiSaving] = useState(false);
+  const [upiError, setUpiError] = useState('');
+  const [upiMessage, setUpiMessage] = useState('');
 
   const currentUser = auth.currentUser || user;
   const providers =
     currentUser?.providerData?.map((p) => p.providerId) || [];
 
   const hasPasswordProvider = providers.includes('password');
-  const hasGoogleProvider = providers.includes('google.com');
 
+
+  // Load the current user's saved UPI profile.
   useEffect(() => {
-    setName(user?.displayName || '');
-    setNewEmail(user?.email || '');
-    setNewPhone(user?.phoneNumber || '');
-  }, [user]);
+    let isMounted = true;
+
+    async function loadPaymentProfile() {
+      try {
+        const profile = await fetchPaymentProfile();
+
+        if (!isMounted) return;
+        setUpiId(profile.upiId || '');
+        setUpiActive(Boolean(profile.isActive));
+      } catch (err) {
+        if (isMounted) {
+          setUpiError(err.message || 'Unable to load UPI profile.');
+        }
+      } finally {
+        if (isMounted) setUpiLoading(false);
+      }
+    }
+
+    loadPaymentProfile();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const displayName = user?.displayName || 'EquiSplit User';
   const email = user?.email || 'Email unavailable';
@@ -432,6 +465,33 @@ function Settings() {
     }
   }
 
+  async function handleUpiSave(event) {
+    event.preventDefault();
+    setUpiError('');
+    setUpiMessage('');
+
+    const normalizedUpiId = upiId.trim().toLowerCase();
+    const upiPattern = /^[a-zA-Z0-9._-]{2,256}@[a-zA-Z0-9.-]{2,64}$/;
+
+    if (!upiPattern.test(normalizedUpiId)) {
+      setUpiError('Enter a valid UPI ID, for example name@bank.');
+      return;
+    }
+
+    setUpiSaving(true);
+
+    try {
+      const profile = await updatePaymentProfile(normalizedUpiId, upiActive);
+      setUpiId(profile.upiId || '');
+      setUpiActive(Boolean(profile.isActive));
+      setUpiMessage('UPI payment profile saved successfully.');
+    } catch (err) {
+      setUpiError(err.message || 'Unable to save UPI profile.');
+    } finally {
+      setUpiSaving(false);
+    }
+  }
+
   async function handleLogout() {
     setError('');
     setLoggingOut(true);
@@ -774,6 +834,54 @@ function Settings() {
             </div>
           </div>
         </div>
+      </section>
+
+      <section className="settings-section">
+        <div className="settings-section-heading">
+          <h2>UPI payment profile</h2>
+          <p>Add the UPI ID where group members can send your settlement payments.</p>
+        </div>
+
+        {upiError && <div className="settings-error" role="alert">{upiError}</div>}
+        {upiMessage && <div className="settings-success" role="status">{upiMessage}</div>}
+
+        {upiLoading ? (
+          <p className="settings-payment-note">Loading your payment profile...</p>
+        ) : (
+          <form className="settings-upi-form" onSubmit={handleUpiSave}>
+            <label htmlFor="settings-upi-id">UPI ID</label>
+            <input
+              id="settings-upi-id"
+              type="text"
+              value={upiId}
+              onChange={(event) => setUpiId(event.target.value)}
+              placeholder="yourname@bank"
+              maxLength={100}
+              autoComplete="off"
+              spellCheck="false"
+              required
+            />
+
+            <label className="settings-upi-toggle" htmlFor="settings-upi-active">
+              <input
+                id="settings-upi-active"
+                type="checkbox"
+                checked={upiActive}
+                onChange={(event) => setUpiActive(event.target.checked)}
+              />
+              <span>Make this UPI ID available for settlements</span>
+            </label>
+
+            <p className="settings-payment-note">
+              Only your UPI ID is stored. EquiSplit does not verify UPI ownership
+              or automatically confirm that a payment has been received.
+            </p>
+
+            <button className="settings-upi-save" type="submit" disabled={upiSaving}>
+              {upiSaving ? 'Saving...' : 'Save UPI profile'}
+            </button>
+          </form>
+        )}
       </section>
 
       <section className="settings-section">

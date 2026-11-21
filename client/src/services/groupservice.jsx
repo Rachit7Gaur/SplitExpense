@@ -1,7 +1,9 @@
 
 import { auth } from '../firebase';
 
-const API_URL = 'http://localhost:5000/api/groups';
+import API_BASE_URL from '../config/api';
+
+const API_URL = `${API_BASE_URL}/groups`;
 
 // Get Firebase authentication token
 async function getAuthToken() {
@@ -378,6 +380,39 @@ export async function rejectPayment(groupId, paymentId) {
 
   if (!response.ok) {
     throw new Error(result.message || 'Unable to reject payment.');
+  }
+
+  return result.data.payment;
+}
+
+// Submit UPI transaction reference
+export async function submitPaymentReference(
+  groupId,
+  paymentId,
+  transactionReference
+) {
+  const token = await getAuthToken();
+
+  const response = await fetch(
+    `${API_URL}/${groupId}/payments/${paymentId}/reference`,
+    {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        transactionReference,
+      }),
+    }
+  );
+
+  const result = await response.json();
+
+  if (!response.ok) {
+    throw new Error(
+      result.message || 'Unable to submit payment reference.'
+    );
   }
 
   return result.data.payment;

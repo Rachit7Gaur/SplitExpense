@@ -1,9 +1,67 @@
+
 const mongoose = require('mongoose');
-const User = require('../models/User');
-const Group = require('../models/Group');
 const crypto = require('crypto');
 
+const User = require('../models/User');
+const Group = require('../models/Group');
+
+const withGroupTransaction = require('../utils/withGroupTransaction');
+
+// --------------------------------------------------
+// Common helpers
+// --------------------------------------------------
+
+function sendGroupError(res, error, fallbackMessage) {
+  console.error(fallbackMessage, error);
+
+  if (error.message === 'INVALID_GROUP_ID') {
+    return res.status(400).json({
+      success: false,
+      message: 'Invalid group ID.'
+    });
+  }
+
+  if (error.message === 'GROUP_NOT_FOUND') {
+    return res.status(404).json({
+      success: false,
+      message: 'Group not found.'
+    });
+  }
+
+  if (error.name === 'ValidationError') {
+    return res.status(400).json({
+      success: false,
+      message: error.message
+    });
+  }
+
+  if (error.code === 11000) {
+    return res.status(409).json({
+      success: false,
+      message: 'A duplicate record already exists.'
+    });
+  }
+
+  return res.status(500).json({
+    success: false,
+    message: fallbackMessage
+  });
+}
+
+async function findCurrentUser(firebaseUid) {
+  return User.findOne({ firebaseUid });
+}
+
+function isGroupMember(group, userId) {
+  return group.members.some(
+    (memberId) => memberId.toString() === userId.toString()
+  );
+}
+
+// --------------------------------------------------
 // Validate group name
+// --------------------------------------------------
+
 function validateGroupInput(req, res, next) {
   const { name } = req.body;
 
@@ -24,15 +82,17 @@ function validateGroupInput(req, res, next) {
   }
 
   req.validatedGroupName = trimmedName;
-  next();
+
+  return next();
 }
 
+// --------------------------------------------------
 // Create a new group
+// --------------------------------------------------
+
 async function createGroup(req, res) {
   try {
-    const user = await User.findOne({
-      firebaseUid: req.user.uid
-    });
+    const user = await findCurrentUser(req.user.uid);
 
     if (!user) {
       return res.status(404).json({
@@ -47,27 +107,28 @@ async function createGroup(req, res) {
       members: [user._id]
     });
 
+    await group.populate([
+      { path: 'createdBy', select: 'name email' },
+      { path: 'members', select: 'name email' }
+    ]);
+
     return res.status(201).json({
       success: true,
       message: 'Group created successfully.',
       data: { group }
     });
   } catch (error) {
-    console.error('Create group error:', error);
-
-    return res.status(500).json({
-      success: false,
-      message: 'Unable to create group.'
-    });
+    return sendGroupError(res, error, 'Unable to create group.');
   }
 }
 
+// --------------------------------------------------
 // Get all groups of the logged-in user
+// --------------------------------------------------
+
 async function getMyGroups(req, res) {
   try {
-    const user = await User.findOne({
-      firebaseUid: req.user.uid
-    });
+    const user = await findCurrentUser(req.user.uid);
 
     if (!user) {
       return res.status(404).json({
@@ -90,30 +151,26 @@ async function getMyGroups(req, res) {
       data: { groups }
     });
   } catch (error) {
-    console.error('Get groups error:', error);
-
-    return res.status(500).json({
-      success: false,
-      message: 'Unable to fetch groups.'
-    });
+    return sendGroupError(res, error, 'Unable to fetch groups.');
   }
 }
 
+// --------------------------------------------------
 // Get details of a specific group
+// --------------------------------------------------
+
 async function getGroupById(req, res) {
   try {
-    // Validate the group ID
-    if (!mongoose.isValidObjectId(req.params.groupId)) {
+    const { groupId } = req.params;
+
+    if (!mongoose.isValidObjectId(groupId)) {
       return res.status(400).json({
         success: false,
         message: 'Invalid group ID.'
       });
     }
 
-    // Find the logged-in user's database profile
-    const user = await User.findOne({
-      firebaseUid: req.user.uid
-    });
+    const user = await findCurrentUser(req.user.uid);
 
     if (!user) {
       return res.status(404).json({
@@ -122,13 +179,15 @@ async function getGroupById(req, res) {
       });
     }
 
-    // Find the group only if the user is a member
     const group = await Group.findOne({
-      _id: req.params.groupId,
+      _id: groupId,
       members: user._id
     })
       .populate('createdBy', 'name email')
-      .populate('members', 'name email');
+      .populate(
+        'members',
+        'name email upiProfile.upiId upiProfile.isActive'
+      );
 
     if (!group) {
       return res.status(404).json({
@@ -137,40 +196,38 @@ async function getGroupById(req, res) {
       });
     }
 
-        // Remove duplicate member IDs
+    // Remove duplicate members from the response only.
+    // A GET request should not modify the database.
     const uniqueMembers = [
       ...new Map(
         group.members.map((member) => [
-          member.toString(),
+          member._id.toString(),
           member
         ])
       ).values()
     ];
 
-    if (uniqueMembers.length !== group.members.length) {
-      group.members = uniqueMembers;
-      await group.save();
-    }
-
-    // Populate member details
-    await group.populate('createdBy', 'name email');
-    await group.populate('members', 'name email');
+    const groupData = group.toObject();
+    groupData.members = uniqueMembers;
 
     return res.status(200).json({
       success: true,
       message: 'Group details fetched successfully.',
-      data: { group }
+      data: { group: groupData }
     });
-
   } catch (error) {
-    console.error('Get group details error:', error);
-
-    return res.status(500).json({
-      success: false,
-      message: 'Unable to fetch group details.'
-    });
+    return sendGroupError(
+      res,
+      error,
+      'Unable to fetch group details.'
+    );
   }
 }
+
+// --------------------------------------------------
+// Generate invitation link
+// Only the group creator can generate an invite.
+// --------------------------------------------------
 
 async function generateInviteLink(req, res) {
   try {
@@ -183,9 +240,18 @@ async function generateInviteLink(req, res) {
       });
     }
 
-    const user = await User.findOne({
-      firebaseUid: req.user.uid
-    });
+    const clientUrl = process.env.CLIENT_URL;
+
+    if (!clientUrl) {
+      console.error('CLIENT_URL is missing from server environment.');
+
+      return res.status(500).json({
+        success: false,
+        message: 'Invitation service is not configured.'
+      });
+    }
+
+    const user = await findCurrentUser(req.user.uid);
 
     if (!user) {
       return res.status(404).json({
@@ -194,75 +260,94 @@ async function generateInviteLink(req, res) {
       });
     }
 
-    const group = await Group.findOne({
-      _id: groupId,
-      createdBy: user._id
-    });
+    const result = await withGroupTransaction(
+      groupId,
+      async (session, lockedGroup) => {
+        // Only the creator can generate invitation links.
+        if (
+          lockedGroup.createdBy.toString() !== user._id.toString()
+        ) {
+          const error = new Error('NOT_GROUP_CREATOR');
+          error.statusCode = 403;
+          throw error;
+        }
 
-    if (!group) {
-      return res.status(404).json({
-        success: false,
-        message: 'Group not found or you are not the creator.'
-      });
-    }
+        const inviteToken = crypto.randomBytes(32).toString('hex');
 
-    const inviteToken = crypto.randomBytes(32).toString('hex');
+        const inviteTokenHash = crypto
+          .createHash('sha256')
+          .update(inviteToken)
+          .digest('hex');
 
-    const inviteTokenHash = crypto
-      .createHash('sha256')
-      .update(inviteToken)
-      .digest('hex');
+        const inviteExpiresAt = new Date(
+          Date.now() + 7 * 24 * 60 * 60 * 1000
+        );
 
-    const inviteExpiresAt = new Date(
-      Date.now() + 7 * 24 * 60 * 60 * 1000
+        // Store only the hash, never the original token.
+        lockedGroup.inviteTokenHash = inviteTokenHash;
+        lockedGroup.inviteExpiresAt = inviteExpiresAt;
+        lockedGroup.inviteEnabled = true;
+
+        await lockedGroup.save({ session });
+
+        return {
+          inviteToken,
+          inviteExpiresAt
+        };
+      }
     );
 
-    group.inviteTokenHash = inviteTokenHash;
-    group.inviteExpiresAt = inviteExpiresAt;
-    group.inviteEnabled = true;
-
-    await group.save();
+    const normalizedClientUrl = clientUrl.replace(/\/+$/, '');
 
     const inviteLink =
-      `${process.env.CLIENT_URL}/join-group/${inviteToken}`;
+      `${normalizedClientUrl}/join-group/${result.inviteToken}`;
 
     return res.status(200).json({
       success: true,
       message: 'Invitation link generated successfully.',
       data: {
         inviteLink,
-        expiresAt: inviteExpiresAt
+        expiresAt: result.inviteExpiresAt
       }
     });
   } catch (error) {
-    console.error('Generate invite link error:', error);
+    if (error.message === 'NOT_GROUP_CREATOR') {
+      return res.status(403).json({
+        success: false,
+        message: 'Only the group creator can generate an invitation link.'
+      });
+    }
 
-    return res.status(500).json({
-      success: false,
-      message: 'Unable to generate invitation link.'
-    });
+    return sendGroupError(
+      res,
+      error,
+      'Unable to generate invitation link.'
+    );
   }
 }
+
+// --------------------------------------------------
+// Accept invitation
+// Add the user to the group transactionally.
+// --------------------------------------------------
 
 async function acceptInvite(req, res) {
   try {
     const { token } = req.params;
 
-    if (!token || !/^[a-f0-9]{64}$/.test(token)) {
+    if (!token || !/^[a-f0-9]{64}$/i.test(token)) {
       return res.status(400).json({
         success: false,
         message: 'Invalid invitation link.'
       });
     }
 
-    const user = await User.findOne({
-      firebaseUid: req.user.uid
-    });
+    const user = await findCurrentUser(req.user.uid);
 
     if (!user) {
       return res.status(404).json({
         success: false,
-        message: 'User profile not found. Please sync your profile first.'
+        message: 'User profile not found.'
       });
     }
 
@@ -271,53 +356,97 @@ async function acceptInvite(req, res) {
       .update(token)
       .digest('hex');
 
-    const group = await Group.findOne({
+    // Initial lookup finds the group ID.
+    // The invitation is checked again inside the transaction.
+    const inviteGroup = await Group.findOne({
       inviteTokenHash,
       inviteEnabled: true,
       inviteExpiresAt: { $gt: new Date() }
-    }).select('+inviteTokenHash');
+    })
+      .select('_id')
+      .lean();
 
-    if (!group) {
+    if (!inviteGroup) {
       return res.status(404).json({
         success: false,
         message: 'Invitation is invalid or has expired.'
       });
     }
 
-    if (group.members.some(
-      (memberId) => memberId.toString() === user._id.toString()
-    )) {
+    const result = await withGroupTransaction(
+      inviteGroup._id,
+      async (session) => {
+        // Re-check the invitation inside the transaction.
+        const group = await Group.findOne({
+          _id: inviteGroup._id,
+          inviteTokenHash,
+          inviteEnabled: true,
+          inviteExpiresAt: { $gt: new Date() }
+        })
+          .select('+inviteTokenHash')
+          .session(session);
+
+        if (!group) {
+          const error = new Error('INVITE_INVALID_OR_EXPIRED');
+          error.statusCode = 404;
+          throw error;
+        }
+
+        if (isGroupMember(group, user._id)) {
+          return {
+            alreadyMember: true,
+            groupId: group._id
+          };
+        }
+
+        // $addToSet prevents duplicate membership.
+        group.members.addToSet(user._id);
+
+        await group.save({ session });
+
+        return {
+          alreadyMember: false,
+          groupId: group._id
+        };
+      }
+    );
+
+    if (result.alreadyMember) {
       return res.status(200).json({
         success: true,
         message: 'You are already a member of this group.',
-        data: { groupId: group._id }
+        data: {
+          groupId: result.groupId
+        }
       });
     }
-
-    await Group.updateOne(
-      {
-        _id: group._id,
-        members: { $ne: user._id }
-      },
-      {
-        $addToSet: { members: user._id }
-      }
-    );
 
     return res.status(200).json({
       success: true,
       message: 'You have successfully joined the group.',
-      data: { groupId: group._id }
+      data: {
+        groupId: result.groupId
+      }
     });
   } catch (error) {
-    console.error('Accept invite error:', error);
+    if (error.message === 'INVITE_INVALID_OR_EXPIRED') {
+      return res.status(404).json({
+        success: false,
+        message: 'Invitation is invalid or has expired.'
+      });
+    }
 
-    return res.status(500).json({
-      success: false,
-      message: 'Unable to accept invitation.'
-    });
+    return sendGroupError(
+      res,
+      error,
+      'Unable to accept invitation.'
+    );
   }
 }
+
+// --------------------------------------------------
+// Exports
+// --------------------------------------------------
 
 module.exports = {
   validateGroupInput,

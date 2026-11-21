@@ -48,7 +48,12 @@ const groupSchema = new mongoose.Schema(
     inviteEnabled: {
       type: Boolean,
       default: false
-    }
+    },
+    paymentLockVersion: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
   },
   {
     timestamps: true,

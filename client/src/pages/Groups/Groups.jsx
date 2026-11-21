@@ -19,21 +19,46 @@ function Groups() {
   const [message, setMessage] = useState('');
 
   const loadGroups = useCallback(async () => {
-    setError('');
+  try {
+    const data = await fetchGroups();
 
-    try {
-      const data = await fetchGroups();
-      setGroups(data);
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+    setGroups(data);
+    setError('');
+  } catch (err) {
+    setError(err.message);
+  } finally {
+    setLoading(false);
+  }
+}, []);
 
   useEffect(() => {
-    loadGroups();
-  }, [loadGroups]);
+  let cancelled = false;
+
+  async function getGroups() {
+    try {
+      const data = await fetchGroups();
+
+      if (!cancelled) {
+        setGroups(data);
+        setError('');
+      }
+    } catch (err) {
+      if (!cancelled) {
+        setError(err.message);
+      }
+    } finally {
+      if (!cancelled) {
+        setLoading(false);
+      }
+    }
+  }
+
+  getGroups();
+
+  return () => {
+    cancelled = true;
+  };
+}, []);
 
   async function handleCreateGroup(event) {
     event.preventDefault();

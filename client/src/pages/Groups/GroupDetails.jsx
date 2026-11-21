@@ -1,7 +1,8 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useAuth } from '../../context/AuthContext';
+import { QRCodeSVG } from 'qrcode.react';
+import { useAuth } from '../../context/useAuth';
 
 import {
   fetchGroupById,
@@ -17,6 +18,7 @@ import {
   fetchGroupPayments,
   confirmPayment,
   rejectPayment,
+  submitPaymentReference, // ADD THIS
 } from '../../services/groupservice';
 
 import './GroupDetails.css';
@@ -89,8 +91,11 @@ const [paymentNote, setPaymentNote] = useState('');
 
 const [paymentLoading, setPaymentLoading] = useState(false);
 const [paymentActionId, setPaymentActionId] = useState(null);
+const [referenceInputs, setReferenceInputs] = useState({});
+const [referenceSubmittingId, setReferenceSubmittingId] = useState(null);
 const [paymentError, setPaymentError] = useState('');
 const [paymentMessage, setPaymentMessage] = useState('');
+const [upiQrData, setUpiQrData] = useState(null);
 
   async function refreshFinancialData() {
   const [
@@ -535,6 +540,59 @@ setPayments(paymentData);
     }
   }
 
+  function handleUPIPayment(settlement) {
+    const receiverId = getMemberId(settlement.to?.userId);
+
+    const receiver = members.find(
+      (member) => getMemberId(member) === receiverId
+    );
+
+    const upiId = receiver?.upiProfile?.upiId;
+    const isUPIActive = receiver?.upiProfile?.isActive === true;
+
+    if (!upiId || !isUPIActive) {
+      setPaymentError(
+        `${settlement.to?.name || 'This member'} has not activated a UPI ID.`
+      );
+      setPaymentMessage('');
+      return;
+    }
+
+    if (!/^[\w.-]+@[\w.-]+$/.test(upiId)) {
+      setPaymentError('The receiver has an invalid UPI ID.');
+      setPaymentMessage('');
+      return;
+    }
+
+    if (
+      !Number.isSafeInteger(settlement.amount) ||
+      settlement.amount <= 0
+    ) {
+      setPaymentError('Invalid settlement amount.');
+      setPaymentMessage('');
+      return;
+    }
+
+    const params = new URLSearchParams({
+      pa: upiId,
+      pn: settlement.to.name,
+      am: (settlement.amount / 100).toFixed(2),
+      cu: 'INR',
+      tn: `EquiSplit settlement - ${group.name}`,
+    });
+
+    const upiUrl = `upi://pay?${params.toString()}`;
+
+    setPaymentError('');
+    setPaymentMessage('Scan the QR code with a UPI app, or open it on a device with a UPI app installed.');
+    setUpiQrData({
+      url: upiUrl,
+      amount: (settlement.amount / 100).toFixed(2),
+      receiverName: settlement.to.name,
+      upiId,
+    });
+  }
+
   async function handleRecordPayment(event) {
   event.preventDefault();
 
@@ -581,6 +639,47 @@ setPayments(paymentData);
     setPaymentError(err.message || 'Unable to record payment.');
   } finally {
     setPaymentLoading(false);
+  }
+}
+
+async function handleSubmitPaymentReference(paymentId) {
+  const transactionReference = (
+    referenceInputs[paymentId] || ''
+  ).trim();
+
+  if (!/^[a-zA-Z0-9/_-]{6,100}$/.test(transactionReference)) {
+    setPaymentError(
+      'Enter a valid transaction reference (6–100 letters, numbers, /, _ or -).'
+    );
+    setPaymentMessage('');
+    return;
+  }
+
+  try {
+    setReferenceSubmittingId(paymentId);
+    setPaymentError('');
+    setPaymentMessage('');
+
+    await submitPaymentReference(
+      groupId,
+      paymentId,
+      transactionReference
+    );
+
+    setReferenceInputs((previous) => ({
+      ...previous,
+      [paymentId]: '',
+    }));
+
+    await refreshFinancialData();
+
+    setPaymentMessage('Transaction reference submitted successfully.');
+  } catch (err) {
+    setPaymentError(
+      err.message || 'Unable to submit transaction reference.'
+    );
+  } finally {
+    setReferenceSubmittingId(null);
   }
 }
 
@@ -1044,16 +1143,47 @@ async function handlePaymentDecision(paymentId, action) {
           </div>
         ) : (
           <div className="dashboard-settlement-list">
-            {settlements.map((settlement, index) => (
-              <div className="dashboard-settlement-item" key={index}>
-                <div>
-                  <strong>{settlement.from.name}</strong>
-                  <span> pays </span>
-                  <strong>{settlement.to.name}</strong>
+            {settlements.map((settlement, index) => {
+              const isCurrentPayer =
+                getMemberId(settlement.from?.userId) === currentMemberId;
+
+              const receiverId = getMemberId(settlement.to?.userId);
+              const receiver = members.find(
+                (member) => getMemberId(member) === receiverId
+              );
+
+              const canPayByUPI =
+                Boolean(receiver?.upiProfile?.upiId) &&
+                receiver?.upiProfile?.isActive === true;
+
+              return (
+                <div className="dashboard-settlement-item" key={index}>
+                  <div>
+                    <strong>{settlement.from.name}</strong>
+                    <span> pays </span>
+                    <strong>{settlement.to.name}</strong>
+                  </div>
+
+                  <strong>{formatCurrency(settlement.amount)}</strong>
+
+                  {isCurrentPayer && (
+                    <button
+                      type="button"
+                      className="dashboard-primary-button"
+                      onClick={() => handleUPIPayment(settlement)}
+                      disabled={!canPayByUPI}
+                      title={
+                        canPayByUPI
+                          ? 'Pay using UPI'
+                          : 'Receiver has not activated a UPI ID'
+                      }
+                    >
+                      {canPayByUPI ? 'Pay Now' : 'UPI unavailable'}
+                    </button>
+                  )}
                 </div>
-                <strong>{formatCurrency(settlement.amount)}</strong>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </section>
@@ -1181,6 +1311,11 @@ async function handlePaymentDecision(paymentId, action) {
           const isReceiver = receiverId === currentMemberId;
           const isPending = payment.status === 'pending';
           const isProcessing = paymentActionId === payment._id;
+          const payerId = getMemberId(payment.fromUser);
+          const isPayer = payerId === currentMemberId;
+
+          const isSubmittingReference =
+            referenceSubmittingId === payment._id;
 
           return (
             <article className="payment-item" key={payment._id}>
@@ -1208,6 +1343,51 @@ async function handlePaymentDecision(paymentId, action) {
                 </div>
               </div>
 
+              {isPending &&
+  isPayer &&
+  payment.method === 'upi' &&
+  !payment.transactionReference && (
+    <div className="payment-reference-form">
+      <label>
+        UPI transaction reference
+
+        <input
+          type="text"
+          value={referenceInputs[payment._id] || ''}
+          onChange={(event) =>
+            setReferenceInputs((previous) => ({
+              ...previous,
+              [payment._id]: event.target.value,
+            }))
+          }
+          placeholder="Enter UPI transaction reference"
+          maxLength={100}
+          disabled={isSubmittingReference}
+        />
+      </label>
+
+      <button
+        type="button"
+        className="dashboard-primary-button"
+        onClick={() =>
+          handleSubmitPaymentReference(payment._id)
+        }
+        disabled={isSubmittingReference}
+      >
+        {isSubmittingReference
+          ? 'Submitting...'
+          : 'Submit reference'}
+      </button>
+    </div>
+  )}
+
+  {payment.transactionReference && (
+  <p className="payment-reference-display">
+    Transaction reference:{' '}
+    <strong>{payment.transactionReference}</strong>
+  </p>
+)}
+
               {isPending && isReceiver && (
                 <div className="payment-actions">
                   <button
@@ -1234,11 +1414,15 @@ async function handlePaymentDecision(paymentId, action) {
                 </div>
               )}
 
-              {isPending && !isReceiver && (
-                <p className="payment-waiting">
-                  Waiting for receiver confirmation.
-                </p>
-              )}
+              {isPending && isPayer && (
+  <p className="payment-waiting">
+    {payment.transactionReference
+      ? 'Reference submitted. Waiting for receiver confirmation.'
+      : payment.method === 'upi'
+        ? 'Submit your UPI transaction reference after completing the payment.'
+        : 'Waiting for receiver confirmation.'}
+  </p>
+)}
             </article>
           );
         })}
@@ -1246,6 +1430,52 @@ async function handlePaymentDecision(paymentId, action) {
     )}
   </div>
 </section>
+
+      {upiQrData && (
+        <div
+          className="upi-modal-overlay"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setUpiQrData(null);
+          }}
+        >
+          <section
+            className="upi-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="upi-modal-title"
+          >
+            <button
+              type="button"
+              className="upi-modal-close"
+              onClick={() => setUpiQrData(null)}
+              aria-label="Close QR code"
+            >
+              ×
+            </button>
+
+            <h2 id="upi-modal-title">Pay with UPI</h2>
+            <p>Scan this QR code using a UPI app.</p>
+
+            <div className="upi-qr-wrapper">
+              <QRCodeSVG value={upiQrData.url} size={220} level="M" includeMargin />
+            </div>
+
+            <h3>₹{upiQrData.amount}</h3>
+            <p>{upiQrData.receiverName}</p>
+            <p className="upi-modal-id">{upiQrData.upiId}</p>
+
+            <a href={upiQrData.url} className="upi-open-app-button">
+              Open UPI App
+            </a>
+
+            <p className="upi-modal-note">
+              Verify the receiver and amount in your UPI app before approving.
+              After payment, return here and record it. Opening this link does not
+              confirm that payment succeeded.
+            </p>
+          </section>
+        </div>
+      )}
 
       {showExpenseForm && (
         <div

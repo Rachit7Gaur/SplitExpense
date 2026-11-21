@@ -1,6 +1,6 @@
 
 import { useEffect, useMemo, useState } from 'react';
-import { useAuth } from '../../context/AuthContext';
+import { useAuth } from '../../context/useAuth';
 import {
   fetchGroups,
   fetchGroupSettlements,
@@ -120,9 +120,6 @@ function Friends() {
 
     if (user?.email) {
       loadFriends();
-    } else {
-      setLoading(false);
-      setError('Please log in to view your friends.');
     }
 
     return () => {
@@ -213,7 +210,12 @@ function Friends() {
           />
         </div>
 
-        {loading ? (
+        {!user?.email ? (
+          <div className="friends-state">
+            <h3>Couldn't load balances</h3>
+            <p>Please log in to view your friends.</p>
+          </div>
+        ) : loading ? (
           <div className="friends-state">
             <div className="friends-loader" />
             <p>Calculating your balances...</p>

@@ -31,6 +31,22 @@ const userSchema = new mongoose.Schema(
       default: null
     },
 
+    // User's UPI payment profile
+    upiProfile: {
+      upiId: {
+        type: String,
+        trim: true,
+        lowercase: true,
+        maxlength: [100, 'UPI ID cannot exceed 100 characters'],
+        default: null
+      },
+
+      isActive: {
+        type: Boolean,
+        default: false
+      }
+    },
+
     profileCompleted: {
       type: Boolean,
       default: true

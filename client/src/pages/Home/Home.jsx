@@ -3,6 +3,8 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import './Home.css';
 
+const CURRENT_YEAR = new Date().getFullYear();
+
 const features = [
   {
     icon: '👥',
@@ -275,7 +277,7 @@ function Home() {
         </Link>
 
         <p>
-          © {new Date().getFullYear()} EquiSplit. All rights reserved.
+          © {CURRENT_YEAR} EquiSplit. All rights reserved.
         </p>
 
         <div className="home-footer-links">
