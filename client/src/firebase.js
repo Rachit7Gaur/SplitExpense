@@ -11,6 +11,13 @@ const firebaseConfig = {
   appId: import.meta.env.VITE_FIREBASE_APP_ID,
 };
 
+console.log('Firebase environment check:', {
+  apiKeyExists: Boolean(firebaseConfig.apiKey),
+  authDomain: firebaseConfig.authDomain,
+  projectId: firebaseConfig.projectId,
+  appIdExists: Boolean(firebaseConfig.appId),
+});
+
 const app = initializeApp(firebaseConfig);
 
 export const auth = getAuth(app);
