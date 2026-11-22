@@ -3,10 +3,9 @@ const { initializeApp, cert, getApps } = require('firebase-admin/app');
 const { getAuth } = require('firebase-admin/auth');
 const path = require('path');
 
-const serviceAccountPath = path.join(
-  __dirname,
-  '../secrets/firebase-service-account.json'
-);
+const serviceAccountPath =
+  process.env.FIREBASE_SERVICE_ACCOUNT_PATH ||
+  path.join(__dirname, '../secrets/firebase-service-account.json');
 
 const serviceAccount = require(serviceAccountPath);
 
