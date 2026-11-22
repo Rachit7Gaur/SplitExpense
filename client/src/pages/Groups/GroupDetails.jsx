@@ -78,8 +78,10 @@ function GroupDetails() {
   const [expenseLoading, setExpenseLoading] = useState(false);
   const [expenseError, setExpenseError] = useState('');
   const [expenseMessage, setExpenseMessage] = useState('');
+  const [expenseToast, setExpenseToast] = useState('');
 
   const [deletingExpenseId, setDeletingExpenseId] = useState(null);
+  const [expenseToDelete, setExpenseToDelete] = useState(null);
 
   const [payments, setPayments] = useState([]);
 
@@ -96,6 +98,17 @@ const [referenceSubmittingId, setReferenceSubmittingId] = useState(null);
 const [paymentError, setPaymentError] = useState('');
 const [paymentMessage, setPaymentMessage] = useState('');
 const [upiQrData, setUpiQrData] = useState(null);
+
+// Automatically hide the expense success popup after 3 seconds.
+useEffect(() => {
+  if (!expenseToast) return undefined;
+
+  const timer = window.setTimeout(() => {
+    setExpenseToast('');
+  }, 3000);
+
+  return () => window.clearTimeout(timer);
+}, [expenseToast]);
 
   async function refreshFinancialData() {
   const [
@@ -449,8 +462,9 @@ setPayments(paymentData);
 
     try {
       setExpenseLoading(true);
+      const wasEditing = isEditingExpense;
 
-      if (isEditingExpense) {
+      if (wasEditing) {
         await updateExpense(groupId, editingExpenseId, expenseData);
       } else {
         await createExpense(groupId, expenseData);
@@ -460,9 +474,9 @@ setPayments(paymentData);
 
       setShowExpenseForm(false);
       resetExpenseForm();
-
-      setExpenseMessage(
-        isEditingExpense
+      setExpenseMessage('');
+      setExpenseToast(
+        wasEditing
           ? 'Expense updated successfully.'
           : 'Expense added successfully.'
       );
@@ -473,7 +487,7 @@ setPayments(paymentData);
     }
   }
 
-  async function handleDeleteExpense(expense) {
+  function handleDeleteExpense(expense) {
     const creatorId = getMemberId(expense.createdBy);
 
     if (!creatorId || !currentMemberId || creatorId !== currentMemberId) {
@@ -481,11 +495,14 @@ setPayments(paymentData);
       return;
     }
 
-    const confirmed = window.confirm(
-      `Delete "${expense.description}"? This will update the group balances and settlements.`
-    );
+    // Open the in-app confirmation popup instead of the browser confirm dialog.
+    setExpenseToDelete(expense);
+  }
 
-    if (!confirmed) return;
+  async function confirmDeleteExpense() {
+    if (!expenseToDelete || deletingExpenseId) return;
+
+    const expense = expenseToDelete;
 
     try {
       setDeletingExpenseId(expense._id);
@@ -495,9 +512,12 @@ setPayments(paymentData);
       await deleteExpense(groupId, expense._id);
       await refreshFinancialData();
 
-      setExpenseMessage('Expense deleted successfully.');
+      setExpenseToDelete(null);
+      setExpenseMessage('');
+      setExpenseToast('Expense deleted successfully.');
     } catch (err) {
       setExpenseError(err.message || 'Unable to delete expense.');
+      setExpenseToDelete(null);
     } finally {
       setDeletingExpenseId(null);
     }
@@ -745,6 +765,13 @@ async function handlePaymentDecision(paymentId, action) {
 
   return (
     <main className="group-dashboard-page">
+      {expenseToast && (
+        <div className="expense-toast" role="status" aria-live="polite">
+          <span className="expense-toast-icon" aria-hidden="true">✓</span>
+          <span>{expenseToast}</span>
+        </div>
+      )}
+
       <section className="group-dashboard-hero">
         <div>
           <p className="dashboard-eyebrow">GROUP</p>
@@ -1473,6 +1500,55 @@ async function handlePaymentDecision(paymentId, action) {
               After payment, return here and record it. Opening this link does not
               confirm that payment succeeded.
             </p>
+          </section>
+        </div>
+      )}
+
+      {expenseToDelete && (
+        <div
+          className="delete-confirm-backdrop"
+          onMouseDown={(event) => {
+            if (
+              event.target === event.currentTarget &&
+              !deletingExpenseId
+            ) {
+              setExpenseToDelete(null);
+            }
+          }}
+        >
+          <section
+            className="delete-confirm-modal"
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="delete-confirm-title"
+            aria-describedby="delete-confirm-description"
+          >
+            <div className="delete-confirm-icon" aria-hidden="true">!</div>
+            <h2 id="delete-confirm-title">Delete this expense?</h2>
+            <p id="delete-confirm-description">
+              Are you sure you want to delete{' '}
+              <strong>“{expenseToDelete.description}”</strong>? This action
+              cannot be undone and will update group balances and settlements.
+            </p>
+
+            <div className="delete-confirm-actions">
+              <button
+                type="button"
+                className="dashboard-secondary-button"
+                onClick={() => setExpenseToDelete(null)}
+                disabled={Boolean(deletingExpenseId)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="delete-confirm-submit"
+                onClick={confirmDeleteExpense}
+                disabled={Boolean(deletingExpenseId)}
+              >
+                {deletingExpenseId ? 'Deleting...' : 'Yes, delete'}
+              </button>
+            </div>
           </section>
         </div>
       )}

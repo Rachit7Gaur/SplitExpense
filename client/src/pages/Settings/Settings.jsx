@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   EmailAuthProvider,
@@ -46,7 +46,16 @@ function Settings() {
   const [loggingOut, setLoggingOut] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
+  const [toast, setToast] = useState('');
   const [, setProviderVersion] = useState(0);
+
+  // Show short-lived success notifications for completed settings actions.
+  useEffect(() => {
+    if (!toast) return undefined;
+
+    const timer = window.setTimeout(() => setToast(''), 3000);
+    return () => window.clearTimeout(timer);
+  }, [toast]);
 
   // UPI payment profile state
   const [upiId, setUpiId] = useState('');
@@ -54,7 +63,6 @@ function Settings() {
   const [upiLoading, setUpiLoading] = useState(true);
   const [upiSaving, setUpiSaving] = useState(false);
   const [upiError, setUpiError] = useState('');
-  const [upiMessage, setUpiMessage] = useState('');
 
   const currentUser = auth.currentUser || user;
   const providers =
@@ -197,7 +205,7 @@ function Settings() {
       });
 
       await syncProfile();
-      setMessage('Your name has been updated successfully.');
+      setToast('Your name has been updated successfully.');
       setModal('');
     } catch (err) {
       setError(err.message || 'Unable to update your name.');
@@ -228,7 +236,7 @@ function Settings() {
     try {
       await verifyBeforeUpdateEmail(auth.currentUser, trimmedEmail);
 
-      setMessage(
+      setToast(
         'Verification link sent. Your email will change after you verify the new address.'
       );
       setModal('');
@@ -308,7 +316,7 @@ function Settings() {
       await updatePhoneNumber(auth.currentUser, credential);
       await syncProfile();
 
-      setMessage('Your phone number has been updated successfully.');
+      setToast('Your phone number has been updated successfully.');
       setModal('');
     } catch (err) {
       setError(
@@ -378,7 +386,7 @@ function Settings() {
       await reload(auth.currentUser);
       setProviderVersion((version) => version + 1);
 
-      setMessage(
+      setToast(
         'Password set successfully. You can now sign in using Google or email and password.'
       );
       setModal('');
@@ -449,7 +457,7 @@ function Settings() {
       await reauthenticateWithCredential(auth.currentUser, credential);
       await updatePassword(auth.currentUser, newPassword);
 
-      setMessage('Your password has been updated successfully.');
+      setToast('Your password has been updated successfully.');
       setModal('');
     } catch (err) {
       setError(
@@ -468,7 +476,6 @@ function Settings() {
   async function handleUpiSave(event) {
     event.preventDefault();
     setUpiError('');
-    setUpiMessage('');
 
     const normalizedUpiId = upiId.trim().toLowerCase();
     const upiPattern = /^[a-zA-Z0-9._-]{2,256}@[a-zA-Z0-9.-]{2,64}$/;
@@ -484,7 +491,7 @@ function Settings() {
       const profile = await updatePaymentProfile(normalizedUpiId, upiActive);
       setUpiId(profile.upiId || '');
       setUpiActive(Boolean(profile.isActive));
-      setUpiMessage('UPI payment profile saved successfully.');
+        setToast('UPI payment profile saved successfully.');
     } catch (err) {
       setUpiError(err.message || 'Unable to save UPI profile.');
     } finally {
@@ -766,6 +773,13 @@ function Settings() {
 
   return (
     <main className="settings-page">
+      {toast && (
+        <div className="settings-toast" role="status" aria-live="polite">
+          <span className="settings-toast-icon" aria-hidden="true">✓</span>
+          <span>{toast}</span>
+        </div>
+      )}
+
       <header className="settings-header">
         <div>
           <p className="settings-eyebrow">EQUISPLIT WORKSPACE</p>
@@ -776,10 +790,6 @@ function Settings() {
 
       {error && !modal && (
         <div className="settings-error" role="alert">{error}</div>
-      )}
-
-      {message && (
-        <div className="settings-success" role="status">{message}</div>
       )}
 
       <section className="settings-section">
@@ -843,7 +853,6 @@ function Settings() {
         </div>
 
         {upiError && <div className="settings-error" role="alert">{upiError}</div>}
-        {upiMessage && <div className="settings-success" role="status">{upiMessage}</div>}
 
         {upiLoading ? (
           <p className="settings-payment-note">Loading your payment profile...</p>
