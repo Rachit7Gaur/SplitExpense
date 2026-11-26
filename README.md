@@ -1,8 +1,12 @@
-# SplitExpense
-
 ### EquiSplit — Shared Expenses, Simplified
 
-SplitExpense is a collaborative expense management web application that helps users create groups, record shared expenses, track balances, and calculate settlements.
+**EquiSplit** is a collaborative expense management web application that helps users manage shared expenses with friends, family, and groups. Users can create groups, record expenses, track balances, and view settlement suggestions through a simple web interface.
+
+## Live Application
+
+- **Frontend:** https://equisplit-pied-chi.vercel.app
+- **Backend API:** https://splitexpense-backend.onrender.com
+- **GitHub Repository:** https://github.com/Rachit7Gaur/SplitExpense
 
 ## Features
 
@@ -15,6 +19,8 @@ SplitExpense is a collaborative expense management web application that helps us
 - Track who owes whom
 - Generate settlement suggestions
 - Manage account settings and linked authentication providers
+- Save and manage UPI payment profiles
+- Submit and verify payment references for settlements
 
 ## Technology Stack
 
@@ -33,9 +39,27 @@ SplitExpense is a collaborative expense management web application that helps us
 - Firebase Authentication
 - Firebase Admin SDK
 
+**Database**
+- MongoDB Atlas
+
+**Deployment**
+- Vercel — Frontend hosting
+- Render — Backend hosting
+
 **Version Control**
 - Git
 - GitHub
+
+## Project Architecture
+
+The application follows a client-server architecture.
+
+1. The React frontend provides the user interface.
+2. The Express backend handles API requests and application logic.
+3. Firebase Authentication manages user authentication.
+4. Firebase Admin SDK verifies authentication tokens on the backend.
+5. MongoDB Atlas stores application data.
+6. The frontend communicates with the backend through REST APIs.
 
 ## Project Structure
 
@@ -93,21 +117,52 @@ npm install
 
 Create the required `.env` files for the frontend and backend.
 
-Use the environment variable names defined in the project's configuration files. Never commit real API keys, passwords, Firebase service-account files, or other secrets.
+Use the environment variable names defined in the project's configuration files.
+
+Never commit real API keys, passwords, Firebase service-account files, or other secrets.
 
 ### 5. Run the application
 
 Start the backend and frontend in separate terminals using their respective development scripts.
 
+For example:
+
+```bash
+# Backend
+cd server
+npm run dev
+```
+
+```bash
+# Frontend
+cd client
+npm run dev
+```
+
+Check the `package.json` files for the exact scripts available in your project.
+
+## Deployment
+
+EquiSplit is deployed using:
+
+- **Vercel:** Hosts the React frontend.
+- **Render:** Hosts the Node.js and Express backend.
+- **MongoDB Atlas:** Provides cloud database hosting.
+
+The deployed frontend communicates with the backend API hosted on Render.
+
 ## Development Team
 
-This project is being developed collaboratively by a team of three.
+This project is being developed collaboratively by a team of three members.
 
 ## Project Status
 
-Core authentication, group management, expense tracking, balance calculations, settlement suggestions, and account settings are implemented. Additional features and production deployment are part of ongoing development.
+The application has been deployed, with core authentication, group management, expense tracking, balance calculations, settlement suggestions, and account settings implemented.
+
+Further improvements, testing, and maintenance are part of ongoing development.
 
 ---
 
-**SplitExpense — EquiSplit**  
+**SplitExpense — EquiSplit**
+
 *Less calculating. More living.*
